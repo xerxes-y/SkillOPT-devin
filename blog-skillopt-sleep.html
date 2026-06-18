@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SkillOpt-Sleep — Your AI Coding Assistant Gets Smarter While You Sleep</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3350;
+      --accent: #6c8aff;
+      --accent2: #a78bfa;
+      --green: #4ade80;
+      --yellow: #fbbf24;
+      --red: #f87171;
+      --text: #e2e8f0;
+      --muted: #8892b0;
+      --code-bg: #0d1117;
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      font-size: 16px;
+      line-height: 1.7;
+    }
+
+    /* ── Header ── */
+    header {
+      background: linear-gradient(135deg, #0f1117 0%, #1a1040 50%, #0f1117 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 80px 24px 60px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    header::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(108,138,255,0.15) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .badge {
+      display: inline-block;
+      background: rgba(108,138,255,0.15);
+      border: 1px solid rgba(108,138,255,0.4);
+      color: var(--accent);
+      padding: 4px 14px;
+      border-radius: 99px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      font-size: clamp(28px, 5vw, 52px);
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      margin-bottom: 20px;
+      background: linear-gradient(135deg, #fff 0%, var(--accent2) 60%, var(--accent) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .subtitle {
+      font-size: 18px;
+      color: var(--muted);
+      max-width: 620px;
+      margin: 0 auto 32px;
+    }
+
+    .meta {
+      display: flex;
+      gap: 24px;
+      justify-content: center;
+      flex-wrap: wrap;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .meta span { display: flex; align-items: center; gap: 6px; }
+
+    /* ── Layout ── */
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 0 24px 80px;
+    }
+
+    /* ── Sections ── */
+    section { margin-top: 64px; }
+
+    h2 {
+      font-size: 26px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    h2 .icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: rgba(108,138,255,0.15);
+      border: 1px solid rgba(108,138,255,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+
+    h3 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #fff;
+      margin: 28px 0 10px;
+    }
+
+    p { color: var(--text); margin-bottom: 14px; }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 16px;
+    }
+
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      text-align: center;
+    }
+
+    .stat-card .number {
+      font-size: 40px;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+
+    .stat-card .label {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* ── Problem / Solution ── */
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    @media (max-width: 600px) {
+      .two-col { grid-template-columns: 1fr; }
+    }
+
+    .problem-box {
+      background: rgba(248,113,113,0.07);
+      border: 1px solid rgba(248,113,113,0.25);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+
+    .solution-box {
+      background: rgba(74,222,128,0.07);
+      border: 1px solid rgba(74,222,128,0.25);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+
+    .problem-box h3 { color: var(--red); margin-top: 0; }
+    .solution-box h3 { color: var(--green); margin-top: 0; }
+
+    /* ── Pipeline ── */
+    .pipeline {
+      display: flex;
+      gap: 0;
+      flex-wrap: wrap;
+      margin: 24px 0;
+    }
+
+    .pipe-step {
+      flex: 1;
+      min-width: 120px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 16px 12px;
+      text-align: center;
+      position: relative;
+    }
+
+    .pipe-step:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+    .pipe-step:last-child  { border-radius: 0 var(--radius) var(--radius) 0; }
+
+    .pipe-step:not(:last-child)::after {
+      content: '→';
+      position: absolute;
+      right: -11px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--accent);
+      font-size: 18px;
+      font-weight: bold;
+      z-index: 1;
+      background: var(--bg);
+      padding: 2px 3px;
+    }
+
+    .pipe-step .emoji { font-size: 22px; display: block; margin-bottom: 6px; }
+    .pipe-step .title { font-size: 12px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.04em; }
+    .pipe-step .desc  { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+    /* ── Code blocks ── */
+    .code-block {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin: 16px 0;
+      font-size: 13.5px;
+    }
+
+    .code-header {
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      padding: 8px 16px;
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .code-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .code-dot.red    { background: #ff5f57; }
+    .code-dot.yellow { background: #febc2e; }
+    .code-dot.green  { background: #28c840; }
+
+    pre {
+      padding: 16px;
+      overflow-x: auto;
+      line-height: 1.6;
+      color: #abb2bf;
+    }
+
+    pre .cmd    { color: var(--green); }
+    pre .comment{ color: var(--muted); font-style: italic; }
+    pre .str    { color: #e06c75; }
+    pre .key    { color: var(--accent); }
+
+    /* ── Tool table ── */
+    .tool-list { display: flex; flex-direction: column; gap: 10px; margin: 16px 0; }
+
+    .tool-item {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+
+    .tool-name {
+      font-family: 'Consolas', 'SF Mono', monospace;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent);
+      background: rgba(108,138,255,0.1);
+      border: 1px solid rgba(108,138,255,0.25);
+      border-radius: 6px;
+      padding: 2px 8px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      align-self: flex-start;
+      margin-top: 2px;
+    }
+
+    .tool-desc { font-size: 14px; color: var(--text); }
+    .tool-desc strong { color: #fff; }
+
+    /* ── Checklist ── */
+    .checklist { list-style: none; padding: 0; }
+    .checklist li {
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      font-size: 15px;
+    }
+    .checklist li:last-child { border-bottom: none; }
+    .checklist li::before { content: '✓'; color: var(--green); font-weight: 700; flex-shrink: 0; }
+
+    /* ── Callout ── */
+    .callout {
+      background: rgba(108,138,255,0.08);
+      border-left: 3px solid var(--accent);
+      border-radius: 0 var(--radius) var(--radius) 0;
+      padding: 16px 20px;
+      margin: 20px 0;
+      font-size: 15px;
+      color: var(--text);
+    }
+
+    .callout strong { color: var(--accent); }
+
+    /* ── Result bar ── */
+    .result-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 10px 0;
+      font-size: 14px;
+    }
+
+    .result-label { width: 220px; flex-shrink: 0; color: var(--muted); }
+
+    .bar-wrap { flex: 1; background: var(--surface2); border-radius: 99px; height: 8px; }
+
+    .bar-fill {
+      height: 8px;
+      border-radius: 99px;
+      background: linear-gradient(90deg, var(--accent) 0%, var(--accent2) 100%);
+      transition: width 1s ease;
+    }
+
+    .result-delta {
+      font-weight: 700;
+      color: var(--green);
+      font-size: 13px;
+      width: 50px;
+      text-align: right;
+    }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--border);
+      text-align: center;
+      padding: 32px 24px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    strong { color: #fff; }
+    em { color: var(--accent2); font-style: normal; }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════ HEADER -->
+<header>
+  <div class="badge">Developer Tooling · AI Assistants · 2026</div>
+  <h1>Your AI Coding Assistant<br>Gets Smarter While You Sleep</h1>
+  <p class="subtitle">
+    A practical guide to SkillOpt-Sleep — the nightly self-evolution engine
+    that turns your daily work sessions into permanent improvements for
+    Windsurf, Devin, and Claude Code.
+  </p>
+  <div class="meta">
+    <span>😴 SkillOpt-Sleep</span>
+    <span>⏱ 8 min read</span>
+    <span>🔧 MCP · Windsurf · Devin</span>
+  </div>
+</header>
+
+<!-- ══════════════════════════════════════════════════════════ CONTENT -->
+<div class="container">
+
+  <!-- ── THE PROBLEM ── -->
+  <section>
+    <h2><span class="icon">🤔</span> The Problem Every Developer Faces</h2>
+
+    <p>
+      You've spent weeks carefully crafting the perfect <strong>skills and prompts</strong>
+      for your AI coding assistant — code-review rules, architecture guidelines,
+      testing standards, coding conventions. You hand them over once, and they
+      sit there, frozen in time.
+    </p>
+
+    <div class="two-col">
+      <div class="problem-box">
+        <h3>❌ Without SkillOpt-Sleep</h3>
+        <ul style="padding-left:16px; color: var(--muted); font-size:14px; line-height:2;">
+          <li>Skills are static — never updated</li>
+          <li>You manually tune prompts (tedious)</li>
+          <li>Agent repeats the same mistakes</li>
+          <li>Recurring tasks get the same avg quality</li>
+          <li>Institutional knowledge lives only in your head</li>
+        </ul>
+      </div>
+      <div class="solution-box">
+        <h3>✅ With SkillOpt-Sleep</h3>
+        <ul style="padding-left:16px; color: var(--muted); font-size:14px; line-height:2;">
+          <li>Skills evolve from your real daily work</li>
+          <li>Zero manual prompt engineering</li>
+          <li>Agent learns from its own past sessions</li>
+          <li>Recurring tasks improve night-over-night</li>
+          <li>Team knowledge encoded automatically</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── WHAT IS IT ── -->
+  <section>
+    <h2><span class="icon">💡</span> What Is SkillOpt-Sleep?</h2>
+
+    <p>
+      <strong>SkillOpt-Sleep</strong> is a nightly offline self-evolution engine for local coding agents.
+      It's a research project by Microsoft (<a href="https://arxiv.org/abs/2605.23904" target="_blank">arXiv 2605.23904</a>)
+      that applies machine-learning discipline — epochs, learning rates, validation gates — to
+      the text inside your <code>SKILL.md</code> files, <strong>without touching any model weights</strong>.
+    </p>
+
+    <div class="callout">
+      <strong>Core idea:</strong> Your SKILL.md is the "trainable weight" of your AI assistant.
+      SkillOpt-Sleep is the optimizer that trains it — using your own sessions as training data,
+      and a held-out validation gate to ensure only improvements ship.
+    </div>
+
+    <p>
+      Think of it like this: every day you work with Windsurf or Devin, you're generating
+      valuable training signal — recurring tasks, patterns, corrections, successful approaches.
+      Without SkillOpt-Sleep, all of that signal vanishes. With it, a nightly cycle harvests
+      that experience and uses it to make your agent measurably better.
+    </p>
+  </section>
+
+  <!-- ── HOW IT WORKS ── -->
+  <section>
+    <h2><span class="icon">⚙️</span> How the Sleep Cycle Works</h2>
+
+    <p>One "night" runs this pipeline automatically:</p>
+
+    <div class="pipeline">
+      <div class="pipe-step">
+        <span class="emoji">🌾</span>
+        <div class="title">Harvest</div>
+        <div class="desc">Pulls sessions from agentmemory, skills, and logs</div>
+      </div>
+      <div class="pipe-step">
+        <span class="emoji">🔍</span>
+        <div class="title">Mine</div>
+        <div class="desc">Identifies recurring tasks in your sessions</div>
+      </div>
+      <div class="pipe-step">
+        <span class="emoji">🔄</span>
+        <div class="title">Replay</div>
+        <div class="desc">Re-runs tasks offline to generate new signal</div>
+      </div>
+      <div class="pipe-step">
+        <span class="emoji">🔒</span>
+        <div class="title">Gate</div>
+        <div class="desc">Only accepts edits that improve held-out score</div>
+      </div>
+      <div class="pipe-step">
+        <span class="emoji">📋</span>
+        <div class="title">Stage</div>
+        <div class="desc">Proposes changes for your review before adopting</div>
+      </div>
+    </div>
+
+    <h3>Data Sources It Harvests</h3>
+    <ul class="checklist">
+      <li><strong>agentmemory</strong> — Memories saved by the MCP agentmemory server across all your sessions</li>
+      <li><strong>SKILL.md files</strong> — Your existing skill definitions used as training signal</li>
+      <li><strong>Windsurf / Cascade logs</strong> — Task snippets extracted from IDE session logs</li>
+    </ul>
+
+    <h3>The Validation Gate — Why It's Safe</h3>
+    <p>
+      Unlike naive self-improvement loops, SkillOpt-Sleep uses a <strong>held-out validation gate</strong>.
+      A candidate skill edit is only accepted if it strictly improves performance on tasks
+      your agent hasn't seen during training. This means:
+    </p>
+    <ul class="checklist">
+      <li>Skills can only improve or stay the same — never regress</li>
+      <li>Overfitting to your recent sessions is blocked</li>
+      <li>You always review the staged proposal before it goes live</li>
+    </ul>
+  </section>
+
+  <!-- ── DEVELOPER USE CASE ── -->
+  <section>
+    <h2><span class="icon">👨‍💻</span> Real Developer Use Cases</h2>
+
+    <h3>1. Java / Spring Boot Developer (our stack)</h3>
+    <div class="card">
+      <p style="margin-bottom:10px;">
+        You work on a Spring Boot microservices project. Every day you ask Devin to:
+        review PRs against SOLID principles, generate JPA entities, write Mockito tests.
+        These are your <em>recurring tasks</em>.
+      </p>
+      <p style="margin-bottom:0;">
+        After a few nights of SkillOpt-Sleep, the agent has mined those patterns and
+        evolved the <code>code-review</code>, <code>code-generator</code>, and
+        <code>test-generator</code> skills to be precisely tuned to <strong>your codebase's
+        conventions</strong>, not just generic Java best practices.
+      </p>
+    </div>
+
+    <h3>2. Multi-Project Team</h3>
+    <div class="card">
+      <p style="margin-bottom:0;">
+        You manage multiple repos (backend services, UI apps, automation). Skills are now
+        centralized in <code>~/.codeium/windsurf/skills/</code> and shared across all projects.
+        SkillOpt-Sleep evolves them based on work happening across <strong>all projects</strong>,
+        not just one — the agent learns patterns that work everywhere.
+      </p>
+    </div>
+
+    <h3>3. Onboarding New Developers</h3>
+    <div class="card">
+      <p style="margin-bottom:0;">
+        A new developer joins and opens the project in Windsurf. They immediately get
+        an AI assistant that already knows your team's conventions, your preferred patterns,
+        and common pitfalls — because those are encoded in evolved SKILL.md files,
+        not scattered in Confluence docs nobody reads.
+      </p>
+    </div>
+
+    <h3>4. Zero Maintenance Prompt Engineering</h3>
+    <div class="card">
+      <p style="margin-bottom:0;">
+        Most teams spend hours tweaking system prompts manually. With SkillOpt-Sleep,
+        your prompts <strong>tune themselves</strong>. Run <code>sleep_run</code> after a productive
+        week and <code>sleep_adopt</code> to apply. The whole cycle takes one API call and
+        a quick review.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── WHAT ACTUALLY CHANGES ── -->
+  <section>
+    <h2><span class="icon">�</span> What Actually Changes After a Few Nights</h2>
+
+    <p>
+      Forget benchmark numbers. Here's what you notice in your daily work after
+      SkillOpt-Sleep has run a few cycles on your real sessions.
+    </p>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3 style="margin-top:0; color: var(--accent2);">Week 1 — The agent stops asking obvious questions</h3>
+      <p style="margin:0; color: var(--muted); font-size:14px;">
+        Before, every code review session started with the agent re-discovering your project
+        structure and conventions. After the first sleep cycle, it already knows your package
+        layout, your naming patterns, your preferred error handling style — because it mined
+        them from your past sessions and baked them into the skill.
+      </p>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3 style="margin-top:0; color: var(--accent2);">Week 2 — Recurring tasks get shorter to write</h3>
+      <p style="margin:0; color: var(--muted); font-size:14px;">
+        Instead of writing "generate a Spring Boot service with repository, DTO, validator,
+        and Mockito tests following our standards", you write "generate UserService".
+        The evolved skill already carries all the context. Your prompts shrink because
+        the skill has absorbed your patterns.
+      </p>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3 style="margin-top:0; color: var(--accent2);">Week 3 — The corrections stop repeating</h3>
+      <p style="margin:0; color: var(--muted); font-size:14px;">
+        You used to correct the same things every session — "don't use field injection",
+        "always add @Transactional on service methods", "use ResponseEntity not raw objects".
+        Sleep mines those corrections from your agentmemory and encodes them permanently
+        into the skill. You stop seeing the same mistake twice.
+      </p>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0; color: var(--accent2);">Month 2 — A new developer opens the project</h3>
+      <p style="margin:0; color: var(--muted); font-size:14px;">
+        They get an AI assistant that already knows your team's conventions — not because
+        someone wrote documentation, but because two months of real sessions were
+        consolidated into the skills. The agent teaches the new developer your standards
+        before the new developer has to ask.
+      </p>
+    </div>
+
+    <div class="callout" style="margin-top:24px;">
+      <strong>The compounding effect:</strong> Each night adds a small improvement.
+      After a week you feel it. After a month it's significant. The more the agent is used,
+      the more material it has to learn from — and the better it gets at the things
+      your team actually does every day.
+    </div>
+  </section>
+
+  <!-- ── THE 5 TOOLS ── -->
+  <section>
+    <h2><span class="icon">🛠️</span> The 5 MCP Tools You Get</h2>
+
+    <p>
+      SkillOpt-Sleep is integrated as an <strong>MCP server</strong> in Windsurf and Devin,
+      giving you these tools directly in your AI assistant:
+    </p>
+
+    <div class="tool-list">
+      <div class="tool-item">
+        <span class="tool-name">sleep_status</span>
+        <div class="tool-desc"><strong>Check progress.</strong> Shows how many nights have run and the latest staged proposal waiting for your review.</div>
+      </div>
+      <div class="tool-item">
+        <span class="tool-name">sleep_dry_run</span>
+        <div class="tool-desc"><strong>Preview without committing.</strong> Runs the full harvest → mine → replay cycle and reports what it found, without staging anything. Great for understanding what would change.</div>
+      </div>
+      <div class="tool-item">
+        <span class="tool-name">sleep_run</span>
+        <div class="tool-desc"><strong>Run a full night.</strong> Executes the complete cycle and stages a proposal for your review. Nothing changes in your live skills until you call <code>sleep_adopt</code>.</div>
+      </div>
+      <div class="tool-item">
+        <span class="tool-name">sleep_adopt</span>
+        <div class="tool-desc"><strong>Apply the improvement.</strong> Applies the staged proposal to your SKILL.md and syncs it to your Windsurf workspace so the agent picks it up immediately.</div>
+      </div>
+      <div class="tool-item">
+        <span class="tool-name">sleep_harvest</span>
+        <div class="tool-desc"><strong>Debug / explore.</strong> Lists the recurring tasks mined from recent sessions so you can see exactly what the engine is learning from.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── QUICK START ── -->
+  <section>
+    <h2><span class="icon">🚀</span> Quick Start in 3 Steps</h2>
+
+    <h3>Step 1 — Check what's been mined</h3>
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-dot red"></span>
+        <span class="code-dot yellow"></span>
+        <span class="code-dot green"></span>
+        <span>Ask in Windsurf / Devin</span>
+      </div>
+      <pre><span class="comment"># Just ask your AI assistant:</span>
+<span class="str">"run sleep_harvest to show me what recurring tasks have been mined"</span></pre>
+    </div>
+
+    <h3>Step 2 — Preview a sleep cycle</h3>
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-dot red"></span>
+        <span class="code-dot yellow"></span>
+        <span class="code-dot green"></span>
+        <span>Ask in Windsurf / Devin</span>
+      </div>
+      <pre><span class="str">"run sleep_dry_run to preview what would change in my skills"</span>
+
+<span class="comment"># Output example:
+# [harvest] agentmemory: 3 sessions, skills: 14, logs: 8 → 25 synthetic sessions
+# [engine]  nights so far: 0
+#           project: /mnt/ssd/project/007
+#           recurring tasks found: code-review (12x), test-generator (8x)</span></pre>
+    </div>
+
+    <h3>Step 3 — Run a night and adopt</h3>
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-dot red"></span>
+        <span class="code-dot yellow"></span>
+        <span class="code-dot green"></span>
+        <span>Ask in Windsurf / Devin</span>
+      </div>
+      <pre><span class="str">"run sleep_run with mock backend to stage a proposal"</span>
+
+<span class="comment"># Review the staged proposal, then:</span>
+<span class="str">"run sleep_adopt to apply the evolved skill"</span>
+
+<span class="comment"># The updated SKILL.md is immediately available in your workspace!</span></pre>
+    </div>
+
+    <div class="callout">
+      <strong>Tip:</strong> Start with <code>backend: "mock"</code> (no API cost) to verify the pipeline works.
+      Switch to <code>backend: "claude"</code> for real skill evolution using your API key.
+    </div>
+  </section>
+
+  <!-- ── WHY IT MATTERS ── -->
+  <section>
+    <h2><span class="icon">🎯</span> Why This Matters For Your Team</h2>
+
+    <div class="card-grid">
+      <div class="card">
+        <h3 style="margin-top:0;">🏗️ Living Architecture Docs</h3>
+        <p style="margin:0; font-size:14px; color:var(--muted);">
+          Skills become a living record of your team's best practices, continuously
+          refined from real work — not a wiki that goes stale in 3 months.
+        </p>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0;">📈 Compounding Improvement</h3>
+        <p style="margin:0; font-size:14px; color:var(--muted);">
+          Every week your agent gets a bit better at your recurring tasks.
+          After a month, the difference is noticeable. After a year, it's remarkable.
+        </p>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0;">🛡️ Gated — Never Regresses</h3>
+        <p style="margin:0; font-size:14px; color:var(--muted);">
+          The validation gate means skills only accept edits that strictly improve.
+          You review before adopting. Safe to run every night.
+        </p>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0;">🔌 Zero Friction</h3>
+        <p style="margin:0; font-size:14px; color:var(--muted);">
+          Runs as an MCP server. No separate tools, no new UIs.
+          Just ask your AI assistant to run it from your normal chat window.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── OUR INTEGRATION ── -->
+  <section>
+    <h2><span class="icon">🔧</span> How We Wired It Into Our Devin IDE Setup</h2>
+
+    <p>
+      Getting SkillOpt-Sleep to work reliably across <strong>Devin IDE, Windsurf, Codeium, and IntelliJ</strong>
+      took more than just installing an MCP server. Here's the exact setup we built — and the
+      problems we ran into along the way.
+    </p>
+
+    <h3>The Starting Problem: Config Sprawl</h3>
+    <p>
+      MCP server configurations were scattered across six different files, skills were duplicated
+      in five separate project directories, and SkillOpt-Sleep itself was disconnected from all of them.
+      Changing one server's config meant updating multiple files by hand. Something would always be
+      out of sync.
+    </p>
+
+    <div class="two-col" style="margin: 20px 0;">
+      <div class="problem-box">
+        <h3>❌ Before</h3>
+        <ul style="padding-left:16px; color: var(--muted); font-size:13px; line-height:2.1;">
+          <li>MCP config in 6 different files</li>
+          <li>Skills duplicated across 5 projects</li>
+          <li>skillopt-sleep missing everywhere</li>
+          <li>IntelliJ uses a different XML format</li>
+          <li>Manual sync required across IDEs</li>
+        </ul>
+      </div>
+      <div class="solution-box">
+        <h3>✅ After</h3>
+        <ul style="padding-left:16px; color: var(--muted); font-size:13px; line-height:2.1;">
+          <li>One master <code>mcp_config.json</code></li>
+          <li>All IDEs symlinked to master</li>
+          <li>Skills in one global location</li>
+          <li>IntelliJ synced via a Python script</li>
+          <li>skillopt-sleep connected and working</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>Step 1 — One Master Config to Rule Them All</h3>
+    <p>
+      We created a single source of truth at <code>/mnt/ssd/project/007/mcp_config.json</code>
+      containing all 9 MCP servers. Then we replaced every IDE-specific config with a symlink
+      pointing to it:
+    </p>
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-dot red"></span>
+        <span class="code-dot yellow"></span>
+        <span class="code-dot green"></span>
+        <span>bash — symlink all IDE configs to master</span>
+      </div>
+      <pre><span class="comment"># Windsurf + Devin CLI read from here</span>
+ln -sf /mnt/ssd/project/007/mcp_config.json \
+    ~/.codeium/windsurf/mcp_config.json
+
+<span class="comment"># Codeium global</span>
+ln -sf /mnt/ssd/project/007/mcp_config.json \
+    ~/.codeium/mcp_config.json
+
+<span class="comment"># IntelliJ needs XML — generated by sync script</span>
+python3 /mnt/ssd/project/007/mcp-manager/sync-intellij-mcp.py</pre>
+    </div>
+    <p>
+      IntelliJ uses a proprietary XML format (<code>llm.mcpServers.xml</code>) rather than JSON,
+      so we wrote a small Python script that reads the master JSON and generates the correct XML
+      into <code>~/.config/JetBrains/IntelliJIdea2026.1/options/</code>. Run it once after any
+      change to the master config and IntelliJ picks it up on restart.
+    </p>
+
+    <h3>Step 2 — One Global Skills Directory</h3>
+    <p>
+      Skills were copy-pasted across every project. A fix in one place didn't propagate anywhere.
+      Windsurf and Devin both read from <code>~/.codeium/windsurf/skills/</code> as a global
+      location, so we moved all 15 skills there and replaced every per-project directory with
+      a symlink:
+    </p>
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-dot red"></span>
+        <span class="code-dot yellow"></span>
+        <span class="code-dot green"></span>
+        <span>bash — one global skills location</span>
+      </div>
+      <pre><span class="comment"># Move master skills to global location</span>
+cp -r /mnt/ssd/project/007/.windsurf/skills \
+    ~/.codeium/windsurf/skills
+
+<span class="comment"># Replace every per-project copy with a symlink</span>
+GLOBAL=~/.codeium/windsurf/skills
+
+<span class="comment"># .windsurf/skills projects</span>
+rm -rf /mnt/ssd/project/007/.windsurf/skills
+ln -s $GLOBAL /mnt/ssd/project/007/.windsurf/skills
+
+rm -rf /mnt/ssd/project/tax-account-transfer/.windsurf/skills
+ln -s $GLOBAL /mnt/ssd/project/tax-account-transfer/.windsurf/skills
+
+<span class="comment"># .devin/skills projects</span>
+rm -rf /mnt/ssd/project/dg-cash-operations/.devin/skills
+ln -s $GLOBAL /mnt/ssd/project/dg-cash-operations/.devin/skills</pre>
+    </div>
+    <p>
+      Now editing a skill in <code>~/.codeium/windsurf/skills/code-review/SKILL.md</code>
+      instantly propagates to every project. SkillOpt-Sleep's <code>sleep_adopt</code>
+      writes there too, so evolved skills are automatically available everywhere.
+    </p>
+
+    <h3>Step 3 — Fixing the Devin IDE Connection</h3>
+    <p>
+      This was the trickiest part. Even after adding skillopt-sleep to the master config,
+      the Devin IDE kept showing it as disconnected. The MCP log revealed the real story:
+    </p>
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-dot red"></span>
+        <span class="code-dot yellow"></span>
+        <span class="code-dot green"></span>
+        <span>~/.config/Devin/logs/.../MCP.log</span>
+      </div>
+      <pre><span class="comment"># The IDE was loading from a path that no longer existed!</span>
+[warning] MCP server <span class="str">'skillopt-sleep'</span> connection failed: connection closed
+[info]    Starting: <span class="key">"python3"</span> [<span class="str">"/home/user/tools/skillopt-windsurf/mcp_server.py"</span>]
+<span class="comment">#                            ↑ this path did not exist</span></pre>
+    </div>
+    <p>
+      The Devin IDE stores MCP server configs in its <strong>internal LevelDB database</strong>,
+      separate from any JSON config file. SkillOpt-Sleep had been manually added through the IDE's
+      UI at some point, pointing to an old path. Changing the JSON config had no effect on it.
+    </p>
+    <p>
+      Rather than modifying the IDE's internal database (risky), we created a
+      <strong>shim script</strong> at the exact path the IDE expects. The shim sets the
+      correct environment variables and delegates to the real server:
+    </p>
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-dot red"></span>
+        <span class="code-dot yellow"></span>
+        <span class="code-dot green"></span>
+        <span>~/tools/skillopt-windsurf/mcp_server.py</span>
+      </div>
+      <pre><span class="comment">#!/usr/bin/env python3
+# Shim: delegates to the real server with correct env vars.</span>
+import os, sys
+
+os.environ.setdefault(<span class="str">"SKILLOPT_REPO"</span>,    <span class="str">"/mnt/ssd/project/SkillOpt"</span>)
+os.environ.setdefault(<span class="str">"SKILLOPT_PROJECT"</span>, <span class="str">"/mnt/ssd/project/007"</span>)
+
+real = <span class="str">"/mnt/ssd/project/007/.windsurf/skillopt/mcp_server.py"</span>
+os.chdir(os.path.dirname(real))
+sys.argv[0] = real
+exec(compile(open(real).read(), real, <span class="str">"exec"</span>))</pre>
+    </div>
+    <p>
+      The Devin IDE's stored config now resolves correctly, the server initializes,
+      and all five SkillOpt-Sleep tools are available in the IDE's MCP panel.
+    </p>
+
+    <h3>The Final Architecture</h3>
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-dot red"></span>
+        <span class="code-dot yellow"></span>
+        <span class="code-dot green"></span>
+        <span>final layout</span>
+      </div>
+      <pre><span class="comment"># Single source of truth for MCP servers</span>
+/mnt/ssd/project/007/mcp_config.json         <span class="comment">← master (edit here only)</span>
+    ↑ symlink
+~/.codeium/windsurf/mcp_config.json          <span class="comment">← Windsurf + Devin CLI</span>
+~/.codeium/mcp_config.json                   <span class="comment">← Codeium global</span>
+mcp-manager/sync-intellij-mcp.py             <span class="comment">← generates IntelliJ XML</span>
+
+<span class="comment"># Single source of truth for skills (15 skills)</span>
+~/.codeium/windsurf/skills/                  <span class="comment">← master (edit here only)</span>
+    ↑ symlink
+007/.windsurf/skills/
+tax-account-transfer/.windsurf/skills/
+dg-settlements-ui/.windsurf/skills/
+processing-ui/.windsurf/skills/
+dg-cash-operations/.devin/skills/
+
+<span class="comment"># Shim for Devin IDE internal database path</span>
+~/tools/skillopt-windsurf/mcp_server.py      <span class="comment">← delegates to real server</span></pre>
+    </div>
+  </section>
+
+  <!-- ── SUMMARY ── -->
+  <section>
+    <h2><span class="icon">✨</span> Summary</h2>
+
+    <p>
+      SkillOpt-Sleep turns your AI coding assistant from a static tool into a
+      <strong>self-improving partner</strong>. Every day you use Windsurf or Devin,
+      you're building training signal. Every night, that signal gets turned into
+      a better version of your skills — validated, staged for review, and ready to adopt.
+    </p>
+
+    <ul class="checklist" style="margin-top:16px;">
+      <li>No weight training, no fine-tuning — pure text optimization of your SKILL.md files</li>
+      <li>Harvests from agentmemory, skills, and Windsurf session logs</li>
+      <li>Validation gate ensures skills only improve, never regress</li>
+      <li>You always review the proposal before it goes live</li>
+      <li>Integrated as MCP server — available directly in Windsurf and Devin</li>
+      <li>Published results: +19–25 accuracy points across 6 benchmarks and 7 models</li>
+    </ul>
+  </section>
+
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ FOOTER -->
+<footer>
+  <p>
+    SkillOpt paper: <a href="https://arxiv.org/abs/2605.23904" target="_blank">arXiv 2605.23904</a> ·
+    Project page: <a href="https://microsoft.github.io/SkillOpt/" target="_blank">microsoft.github.io/SkillOpt</a>
+  </p>
+  <p style="margin-top:8px; color: #4a5568;">
+    Written based on hands-on integration in a real Java / Spring Boot microservices project.
+  </p>
+</footer>
+
+</body>
+</html>
