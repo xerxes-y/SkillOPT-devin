@@ -16,7 +16,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ── defaults ──────────────────────────────────────────────────────────────────
-SKILLOPT_DIR="${SKILLOPT_DIR:-$HOME/.local/share/SkillOpt}"
+SKILLOPT_DIR="${SKILLOPT_DIR:-$HOME/tools/SkillOpt}"
 DATA_DIR="${SKILLOPT_WINDSURF_CLAUDE_HOME:-$HOME/.skillopt-sleep-windsurf}"
 MCP_CONFIG="$HOME/.codeium/windsurf/mcp_config.json"
 DRY_RUN=0

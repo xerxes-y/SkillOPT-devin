@@ -46,7 +46,7 @@ bash install.sh
 ```
 
 `install.sh` will:
-1. Clone [microsoft/SkillOpt](https://github.com/microsoft/SkillOpt) to `~/.local/share/SkillOpt`
+1. Use or clone [microsoft/SkillOpt](https://github.com/microsoft/SkillOpt) to `~/tools/SkillOpt` (or `--skillopt-dir`)
 2. Install `skillopt_sleep` (editable) into your Python environment
 3. Create `~/.skillopt-sleep-windsurf/` (runtime data dir)
 4. Seed `skillopt-sleep-learned/SKILL.md` into every detected workspace (`.windsurf/skills/` **and** `.devin/skills/`)
