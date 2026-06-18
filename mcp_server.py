@@ -115,7 +115,7 @@ def _run_harvest() -> str:
     except Exception as exc:
         return f"[harvest_windsurf] warning: {exc}"
 
-# ── post-adopt: sync evolved skill into workspace ─────────────────────────────
+# ── post-adopt: sync evolved skill into workspace (.windsurf + .devin) ────────
 
 def _sync_skill(project: str) -> str:
     src = os.path.join(CLAUDE_HOME, "skills", MANAGED_SKILL_NAME, "SKILL.md")
@@ -123,11 +123,18 @@ def _sync_skill(project: str) -> str:
         return ""
     if not project or not os.path.isdir(project):
         return ""
-    dst_dir = os.path.join(project, ".windsurf", "skills", MANAGED_SKILL_NAME)
-    os.makedirs(dst_dir, exist_ok=True)
-    dst = os.path.join(dst_dir, "SKILL.md")
-    shutil.copy2(src, dst)
-    return f"\n[sleep] synced evolved skill → {dst}"
+    synced = []
+    for dot_dir in (".windsurf", ".devin"):
+        dot_root = os.path.join(project, dot_dir)
+        if not os.path.isdir(dot_root):
+            continue
+        dst_dir = os.path.join(dot_root, "skills", MANAGED_SKILL_NAME)
+        os.makedirs(dst_dir, exist_ok=True)
+        dst = os.path.join(dst_dir, "SKILL.md")
+        shutil.copy2(src, dst)
+        synced.append(dst)
+    return ("\n" + "\n".join(f"[sleep] synced evolved skill → {p}" for p in synced)
+            if synced else "")
 
 # ── engine call ───────────────────────────────────────────────────────────────
 

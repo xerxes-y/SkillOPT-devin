@@ -1,41 +1,43 @@
 # skillopt-windsurf
 
-**SkillOpt-Sleep** integration for **Windsurf/Cascade** (Codeium).
+**SkillOpt-Sleep** integration for **Windsurf/Cascade** (Codeium) and **Devin** (Cognition).
 
-Gives Cascade a nightly *sleep cycle*: reviews past sessions, mines recurring
+Gives both agents a nightly *sleep cycle*: reviews past sessions, mines recurring
 patterns, proposes bounded edits to a long-term `SKILL.md`, and gates every
 change with a held-out validation score — so only improvements that actually
-make Cascade better *at your work* get adopted.
+make the agent better *at your work* get adopted.
 
 > Built on [microsoft/SkillOpt](https://github.com/microsoft/SkillOpt).
-> This repo is the Windsurf-specific plugin (`plugins/windsurf/` contribution).
+> This repo is the Windsurf+Devin plugin (`plugins/windsurf/` contribution).
 
 ---
 
 ## How it works
 
-Windsurf does not write Cascade conversation transcripts to disk.
-`harvest_windsurf.py` bridges this by converting three locally available
-sources into Claude Code-compatible JSONL transcripts the engine understands:
+Neither Windsurf nor Devin write conversation transcripts to disk in a format
+the sleep engine understands.  `harvest_windsurf.py` bridges this by converting
+every locally available source into Claude Code-compatible JSONL transcripts:
 
 | Source | Where | What it contributes |
 |---|---|---|
+| **Devin transcripts** | `~/.local/share/devin/cli/transcripts/*.json` | Native ATIF-v1.7 sessions — real user↔agent turns |
 | **agentmemory** | `~/.agentmemory/standalone.json` | Saved memories from the [agentmemory MCP server](https://github.com/agentmemory/agentmemory) |
-| **Skill files** | `.windsurf/skills/*/SKILL.md` in each workspace | Skill trigger patterns and expected behavior |
-| **Extension logs** | `~/.config/Windsurf/logs/` | Best-effort user task snippets |
+| **Skill files** | `.windsurf/skills/*/SKILL.md` and `.devin/skills/*/SKILL.md` | Skill trigger patterns and expected behavior |
+| **Extension logs** | `~/.config/Windsurf/logs/` | Best-effort Cascade task snippets |
 
-Workspaces are **auto-detected** from Windsurf's registry
-(`~/.config/Windsurf/User/workspaceStorage/*/workspace.json`) — nothing to
-configure manually.
+Workspaces are **auto-detected** from both registries (nothing to configure):
+- Windsurf: `~/.config/Windsurf/User/workspaceStorage/*/workspace.json`
+- Devin: `~/.config/Devin/User/workspaceStorage/*/workspace.json`
 
-The evolved skill is written to `.windsurf/skills/skillopt-sleep-learned/SKILL.md`
-in your active workspace and synced automatically after `sleep_adopt`.
+After `sleep_adopt` the evolved skill is synced to **both**
+`.windsurf/skills/skillopt-sleep-learned/SKILL.md` **and**
+`.devin/skills/skillopt-sleep-learned/SKILL.md` automatically.
 
 ---
 
 ## Install
 
-**Requirements:** Python ≥ 3.10, Git, Windsurf.
+**Requirements:** Python ≥ 3.10, Git. Works with Windsurf, Devin, or both.
 
 ```bash
 git clone https://github.com/YOUR_USERNAME/skillopt-windsurf.git
@@ -47,22 +49,24 @@ bash install.sh
 1. Clone [microsoft/SkillOpt](https://github.com/microsoft/SkillOpt) to `~/.local/share/SkillOpt`
 2. Install `skillopt_sleep` (editable) into your Python environment
 3. Create `~/.skillopt-sleep-windsurf/` (runtime data dir)
-4. Seed `skillopt-sleep-learned/SKILL.md` into every detected workspace
-5. Patch `~/.codeium/windsurf/mcp_config.json` to register the MCP server
+4. Seed `skillopt-sleep-learned/SKILL.md` into every detected workspace (`.windsurf/skills/` **and** `.devin/skills/`)
+5. Patch `~/.codeium/windsurf/mcp_config.json` to register the MCP server with Windsurf
+6. Auto-register with **Devin CLI** MCP (`devin mcp add skillopt-sleep`) if the Devin CLI is on PATH
 
-Then **reload MCP servers** in Windsurf:
-`Cmd+Shift+P` → *"Windsurf: Reload MCP Servers"*
+### Windsurf post-install
 
-### Optional: tell Cascade about the tools
+Reload MCP servers: `Cmd+Shift+P` → *"Windsurf: Reload MCP Servers"*
 
-Append `windsurf-rules.snippet.md` to your project's `.windsurfrules` (or
-Windsurf global rules) so Cascade automatically offers the sleep cycle when
-relevant.
+Optionally append `windsurf-rules.snippet.md` to your `.windsurfrules`.
+
+### Devin post-install
+
+MCP registration is automatic if the Devin CLI is installed.
+Optionally copy `devin-rules.snippet.md` to `.devin/rules/skillopt-sleep.md` in your workspace so Devin knows to offer the sleep tools.
 
 ### Manual config
 
-If you prefer to configure manually, add this to
-`~/.codeium/windsurf/mcp_config.json`:
+**Windsurf** — add to `~/.codeium/windsurf/mcp_config.json`:
 
 ```json
 {
@@ -79,11 +83,20 @@ If you prefer to configure manually, add this to
 }
 ```
 
+**Devin** — run once in a terminal:
+
+```bash
+devin mcp add skillopt-sleep \
+  --env "SKILLOPT_SLEEP_REPO=/abs/path/to/SkillOpt" \
+  --env "SKILLOPT_WINDSURF_CLAUDE_HOME=$HOME/.skillopt-sleep-windsurf" \
+  -- python3 /abs/path/to/skillopt-windsurf/mcp_server.py
+```
+
 ---
 
 ## Use
 
-Ask Cascade:
+Ask Cascade or Devin:
 
 > *"run the sleep cycle"*, *"what did the last sleep propose?"*, *"adopt it"*
 
@@ -138,13 +151,14 @@ printf '%s\n' \
 
 ```
 skillopt-windsurf/
-├── mcp_server.py             MCP server (stdlib-only, stdio)
-├── harvest_windsurf.py       Windsurf-specific transcript generator
-├── mcp-config.example.json   Drop-in MCP config snippet
-├── windsurf-rules.snippet.md Paste into .windsurfrules
+├── mcp_server.py              MCP server (stdlib-only, stdio) — Windsurf + Devin
+├── harvest_windsurf.py        Transcript generator (Devin ATIF-v1.7 + agentmemory + skills + logs)
+├── mcp-config.example.json    Windsurf MCP config snippet
+├── windsurf-rules.snippet.md  Paste into .windsurfrules
+├── devin-rules.snippet.md     Copy to .devin/rules/skillopt-sleep.md
 ├── seed_skill/
-│   └── SKILL.md              Initial skill seed (replaced by sleep_adopt)
-├── install.sh                One-shot installer
+│   └── SKILL.md               Initial skill seed (replaced by sleep_adopt)
+├── install.sh                 One-shot installer (Windsurf + Devin auto-detected)
 └── README.md
 ```
 

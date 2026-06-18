@@ -67,16 +67,11 @@ run mkdir -p "$DATA_DIR/projects"
 MANAGED_SKILL="${SKILLOPT_MANAGED_SKILL:-skillopt-sleep-learned}"
 SEED="$SCRIPT_DIR/seed_skill/SKILL.md"
 WS_STORAGE="$HOME/.config/Windsurf/User/workspaceStorage"
-if [[ -d "$WS_STORAGE" ]]; then
-  while IFS= read -r ws_json; do
-    folder=$(python3 -c "
-import json, sys
-d = json.load(open('$ws_json'))
-f = d.get('folder','')
-print(f[7:] if f.startswith('file://') else f)
-" 2>/dev/null)
-    if [[ -n "$folder" && -d "$folder" ]]; then
-      skill_dir="$folder/.windsurf/skills/$MANAGED_SKILL"
+_seed_skill_in_folder() {
+  local folder="$1"
+  for dot_dir in .windsurf .devin; do
+    if [[ -d "$folder/$dot_dir" ]]; then
+      local skill_dir="$folder/$dot_dir/skills/$MANAGED_SKILL"
       if [[ ! -f "$skill_dir/SKILL.md" ]]; then
         log "Seeding skill → $skill_dir/SKILL.md"
         run mkdir -p "$skill_dir"
@@ -85,10 +80,26 @@ print(f[7:] if f.startswith('file://') else f)
         log "Skill already present: $skill_dir/SKILL.md (skipped)"
       fi
     fi
-  done < <(find "$WS_STORAGE" -name "workspace.json" 2>/dev/null)
-fi
+  done
+}
 
-# ── 6. Patch mcp_config.json ─────────────────────────────────────────────────
+for registry in \
+  "$HOME/.config/Windsurf/User/workspaceStorage" \
+  "$HOME/.config/Devin/User/workspaceStorage"; do
+  if [[ -d "$registry" ]]; then
+    while IFS= read -r ws_json; do
+      folder=$(python3 -c "
+import json; d=json.load(open('$ws_json')); f=d.get('folder','')
+print(f[7:] if f.startswith('file://') else f)
+" 2>/dev/null)
+      if [[ -n "$folder" && -d "$folder" ]]; then
+        _seed_skill_in_folder "$folder"
+      fi
+    done < <(find "$registry" -name "workspace.json" 2>/dev/null)
+  fi
+done
+
+# ── 6. Patch Windsurf mcp_config.json ────────────────────────────────────────
 MCP_ENTRY='{
   "command": "python3",
   "args": ["'"$SCRIPT_DIR/mcp_server.py"'"],
@@ -109,20 +120,55 @@ cfg = json.load(open("$MCP_CONFIG"))
 cfg.setdefault("mcpServers", {})["skillopt-sleep"] = $MCP_ENTRY
 with open("$MCP_CONFIG", "w") as f:
     json.dump(cfg, f, indent=2)
-print("[install] MCP config updated: $MCP_CONFIG")
+print("[install] Windsurf MCP config updated: $MCP_CONFIG")
 PYEOF
 else
   echo "[dry-run] Would patch: $MCP_CONFIG"
+fi
+
+# ── 7. Register with Devin CLI MCP ────────────────────────────────────────────
+DEVIN_BIN=""
+for candidate in \
+  "$HOME/.local/share/devin/cli/$(ls "$HOME/.local/share/devin/cli/_versions/" 2>/dev/null | sort -V | tail -1)/bin/devin" \
+  "$HOME/.local/bin/devin" \
+  "$(command -v devin 2>/dev/null)"; do
+  if [[ -x "$candidate" ]]; then
+    DEVIN_BIN="$candidate"
+    break
+  fi
+done
+
+if [[ -n "$DEVIN_BIN" ]]; then
+  log "Registering with Devin CLI MCP: $DEVIN_BIN"
+  if [[ $DRY_RUN -eq 0 ]]; then
+    # Remove stale entry silently, then re-add
+    "$DEVIN_BIN" mcp remove skillopt-sleep 2>/dev/null || true
+    "$DEVIN_BIN" mcp add skillopt-sleep \
+      --env "SKILLOPT_SLEEP_REPO=$SKILLOPT_DIR" \
+      --env "SKILLOPT_WINDSURF_CLAUDE_HOME=$DATA_DIR" \
+      -- python3 "$SCRIPT_DIR/mcp_server.py"
+    log "Devin MCP registered: skillopt-sleep"
+  else
+    echo "[dry-run] Would run: devin mcp add skillopt-sleep -- python3 $SCRIPT_DIR/mcp_server.py"
+  fi
+else
+  log "Devin CLI not found — skipping Devin MCP registration"
+  log "(Install Devin CLI, then run: devin mcp add skillopt-sleep -- python3 $SCRIPT_DIR/mcp_server.py)"
 fi
 
 # ── done ──────────────────────────────────────────────────────────────────────
 echo ""
 echo "✓ Installation complete."
 echo ""
-echo "  Next steps:"
-echo "  1. Reload MCP servers in Windsurf (Cmd+Shift+P → 'Windsurf: Reload MCP Servers')"
+echo "  Windsurf next steps:"
+echo "  1. Reload MCP servers (Cmd+Shift+P → 'Windsurf: Reload MCP Servers')"
 echo "  2. (Optional) append windsurf-rules.snippet.md to your .windsurfrules"
-echo "  3. Ask Cascade: 'run the sleep cycle' or 'sleep_dry_run'"
+echo "  3. Ask Cascade: 'run the sleep cycle'"
+echo ""
+echo "  Devin next steps:"
+echo "  1. MCP registration was handled automatically (if Devin CLI was found)"
+echo "  2. (Optional) append devin-rules.snippet.md to your .devin/rules/"
+echo "  3. Ask Devin: 'run the sleep cycle'"
 echo ""
 echo "  Default backend is 'mock' (free). For real optimization:"
 echo "    ANTHROPIC_API_KEY=... → backend: claude"

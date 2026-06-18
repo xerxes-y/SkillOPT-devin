@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
-"""Convert Windsurf/Cascade local data into Claude Code-format JSONL transcripts.
+"""Convert Windsurf/Cascade and Devin IDE local data into Claude Code-format JSONL transcripts.
 
-Windsurf (Codeium) does not persist Cascade conversation transcripts to the
-local filesystem the way Claude Code does.  This script bridges that gap by
-synthesising transcript JSONL files from sources that *are* available locally:
+Neither Windsurf (Codeium) nor Devin (Cognition) persist agent conversation
+transcripts to disk in a format the sleep engine understands.  This script
+bridges that gap by synthesising JSONL files from every locally available
+source:
 
-  1. **agentmemory** (~/.agentmemory/standalone.json)
+  1. **Devin transcripts** (~/.local/share/devin/cli/transcripts/*.json)
+     Native ATIF-v1.7 format — source:"user" / source:"agent" messages
+     converted directly to user/assistant JSONL turns.
+
+  2. **agentmemory** (~/.agentmemory/standalone.json)
      Memories saved by the `agentmemory` MCP server — each memory's title
      becomes a synthetic user prompt; its content becomes the assistant reply.
 
-  2. **Windsurf skill files** (.windsurf/skills/*/SKILL.md in each workspace)
+  3. **Skill files** (.windsurf/skills/*/SKILL.md and .devin/skills/*/SKILL.md)
      Each skill description is converted to a session where the user asked
      "use the <skill> skill" and the assistant described how to apply it.
 
-  3. **Windsurf extension logs** (~/.config/Windsurf/logs/)
-     User-facing task snippets extracted from the Cascade extension log lines
+  4. **Windsurf extension logs** (~/.config/Windsurf/logs/)
+     User-facing task snippets extracted from extension-host log lines
      (best-effort; empty when no useful content is present).
 
 Output layout (mirrors ~/.claude/projects/<slug>/<sessionId>.jsonl):
@@ -22,9 +27,9 @@ Output layout (mirrors ~/.claude/projects/<slug>/<sessionId>.jsonl):
 
 Workspace auto-detection order:
   1. ``SKILLOPT_WINDSURF_WORKSPACES`` env var — colon-separated abs paths
-  2. ``~/.config/Windsurf/User/workspaceStorage/*/workspace.json`` — Windsurf's
-     own registry of recently opened folders
-  3. Working directory fallback
+  2. Windsurf registry: ``~/.config/Windsurf/User/workspaceStorage/*/workspace.json``
+  3. Devin registry:   ``~/.config/Devin/User/workspaceStorage/*/workspace.json``
+  4. Working directory fallback
 
 Usage (standalone):
     python harvest_windsurf.py [--out-dir PATH] [--workspaces PATH ...]
@@ -43,30 +48,44 @@ from typing import Any, Dict, List, Optional
 
 # ── workspace auto-detection ─────────────────────────────────────────────────
 
+def _workspaces_from_registry(storage_root: str) -> List[tuple]:
+    """Read VS Code-style workspaceStorage to get (mtime, path) pairs."""
+    results: List[tuple] = []
+    if not os.path.isdir(storage_root):
+        return results
+    for entry in os.scandir(storage_root):
+        ws_json = os.path.join(entry.path, "workspace.json")
+        if not os.path.isfile(ws_json):
+            continue
+        try:
+            with open(ws_json, encoding="utf-8") as f:
+                data = json.load(f)
+            folder = data.get("folder", "")
+            if folder.startswith("file://"):
+                folder = folder[len("file://"):]
+            if folder and os.path.isdir(folder):
+                results.append((os.path.getmtime(ws_json), folder))
+        except Exception:
+            continue
+    return results
+
+
 def _detect_workspaces() -> List[str]:
-    """Return list of known Windsurf workspace paths, newest first."""
+    """Return known workspace paths (Windsurf + Devin registries), newest first."""
     env_val = os.environ.get("SKILLOPT_WINDSURF_WORKSPACES", "")
     if env_val:
         return [p for p in env_val.split(":") if p and os.path.isdir(p)]
 
-    storage = os.path.expanduser("~/.config/Windsurf/User/workspaceStorage")
+    seen: set = set()
     results: List[tuple] = []
-    if os.path.isdir(storage):
-        for entry in os.scandir(storage):
-            ws_json = os.path.join(entry.path, "workspace.json")
-            if not os.path.isfile(ws_json):
-                continue
-            try:
-                with open(ws_json, encoding="utf-8") as f:
-                    data = json.load(f)
-                folder = data.get("folder", "")
-                if folder.startswith("file://"):
-                    folder = folder[len("file://"):]
-                if folder and os.path.isdir(folder):
-                    mtime = os.path.getmtime(ws_json)
-                    results.append((mtime, folder))
-            except Exception:
-                continue
+    for registry in (
+        os.path.expanduser("~/.config/Windsurf/User/workspaceStorage"),
+        os.path.expanduser("~/.config/Devin/User/workspaceStorage"),
+    ):
+        for mtime, folder in _workspaces_from_registry(registry):
+            if folder not in seen:
+                seen.add(folder)
+                results.append((mtime, folder))
     results.sort(reverse=True)
     paths = [p for _, p in results]
     return paths if paths else [os.getcwd()]
@@ -127,7 +146,82 @@ def _infer_project(text: str, workspaces: List[str]) -> str:
             return ws
     return workspaces[0] if workspaces else os.getcwd()
 
-# ── source 1: agentmemory ─────────────────────────────────────────────────────
+# ── source 1: Devin ATIF-v1.7 transcripts ────────────────────────────────────
+
+def harvest_devin_transcripts(
+    transcripts_dir: str, out_dir: str, workspaces: List[str]
+) -> int:
+    """Convert Devin CLI ATIF-v1.7 transcripts to Claude Code JSONL."""
+    if not os.path.isdir(transcripts_dir):
+        return 0
+    written = 0
+    for entry in os.scandir(transcripts_dir):
+        if not entry.name.endswith(".json"):
+            continue
+        try:
+            with open(entry.path, encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            continue
+        if data.get("schema_version", "").startswith("ATIF"):
+            pass  # Devin native format
+        else:
+            continue
+        session_id = data.get("session_id") or entry.name[:-5]
+        steps = data.get("steps") or []
+        user_prompts: List[str] = []
+        agent_replies: List[str] = []
+        project = ""
+        ts_base: Optional[float] = None
+        for step in steps:
+            src = step.get("source", "")
+            msg = str(step.get("message") or "").strip()
+            if not msg or src == "system":
+                continue
+            if src == "user":
+                user_prompts.append(msg)
+                if not project:
+                    project = _infer_project(msg, workspaces)
+            elif src == "agent":
+                agent_replies.append(msg)
+            if ts_base is None:
+                raw_ts = step.get("timestamp", "")
+                if raw_ts:
+                    try:
+                        from datetime import datetime as _dt
+                        ts_base = _dt.fromisoformat(
+                            raw_ts.replace("Z", "+00:00")
+                        ).timestamp() * 1000
+                    except Exception:
+                        pass
+        if not user_prompts:
+            continue
+        if not project:
+            project = workspaces[0] if workspaces else os.getcwd()
+        if ts_base is None:
+            ts_base = datetime.now(tz=timezone.utc).timestamp() * 1000
+        # Pair turns; pad shorter list
+        n = max(len(user_prompts), len(agent_replies))
+        user_prompts += [""] * (n - len(user_prompts))
+        agent_replies += [""] * (n - len(agent_replies))
+        _write_session(
+            out_dir, project, f"devin_{session_id}",
+            user_prompts=[p for p in user_prompts if p],
+            assistant_replies=[r if r else "[no reply recorded]" for r, p in
+                               zip(agent_replies, user_prompts) if p],
+            timestamp_base_ms=ts_base,
+        )
+        _append_history(
+            out_dir,
+            display=(user_prompts[0] or session_id)[:120],
+            project=project,
+            timestamp_ms=ts_base,
+        )
+        written += 1
+    return written
+
+
+# ── source 2: agentmemory ─────────────────────────────────────────────────────
 
 def harvest_agentmemory(agentmemory_path: str, out_dir: str,
                         workspaces: List[str]) -> int:
@@ -153,37 +247,43 @@ def harvest_agentmemory(agentmemory_path: str, out_dir: str,
         written += 1
     return written
 
-# ── source 2: Windsurf skill files ────────────────────────────────────────────
+# ── source 3: skill files (.windsurf/skills and .devin/skills) ───────────────
 
 def harvest_skills(workspaces: List[str], out_dir: str) -> int:
     written = 0
+    seen_ids: set = set()
     for ws in workspaces:
-        skills_root = os.path.join(ws, ".windsurf", "skills")
-        if not os.path.isdir(skills_root):
-            continue
-        for skill_dir in os.scandir(skills_root):
-            if not skill_dir.is_dir():
+        for dot_dir in (".windsurf", ".devin"):
+            skills_root = os.path.join(ws, dot_dir, "skills")
+            if not os.path.isdir(skills_root):
                 continue
-            skill_md = os.path.join(skill_dir.path, "SKILL.md")
-            if not os.path.isfile(skill_md):
-                continue
-            with open(skill_md, encoding="utf-8") as f:
-                raw = f.read()
-            body = re.sub(r"^---.*?---\s*", "", raw, flags=re.DOTALL).strip()
-            if not body:
-                continue
-            first_line = body.split("\n")[0].lstrip("# ").strip()
-            user_ask = f"Please use the {skill_dir.name} skill: {first_line}"
-            ts = datetime.now(tz=timezone.utc).timestamp() * 1000 - 3_600_000
-            _write_session(out_dir, ws, f"skill_{skill_dir.name}",
-                           user_prompts=[user_ask],
-                           assistant_replies=[body[:1200]],
-                           timestamp_base_ms=ts)
-            _append_history(out_dir, display=user_ask[:120], project=ws, timestamp_ms=ts)
-            written += 1
+            for skill_dir in os.scandir(skills_root):
+                if not skill_dir.is_dir():
+                    continue
+                skill_md = os.path.join(skill_dir.path, "SKILL.md")
+                if not os.path.isfile(skill_md):
+                    continue
+                sid = f"skill_{skill_dir.name}"
+                if sid in seen_ids:
+                    continue
+                seen_ids.add(sid)
+                with open(skill_md, encoding="utf-8") as f:
+                    raw = f.read()
+                body = re.sub(r"^---.*?---\s*", "", raw, flags=re.DOTALL).strip()
+                if not body:
+                    continue
+                first_line = body.split("\n")[0].lstrip("# ").strip()
+                user_ask = f"Please use the {skill_dir.name} skill: {first_line}"
+                ts = datetime.now(tz=timezone.utc).timestamp() * 1000 - 3_600_000
+                _write_session(out_dir, ws, sid,
+                               user_prompts=[user_ask],
+                               assistant_replies=[body[:1200]],
+                               timestamp_base_ms=ts)
+                _append_history(out_dir, display=user_ask[:120], project=ws, timestamp_ms=ts)
+                written += 1
     return written
 
-# ── source 3: extension host logs ────────────────────────────────────────────
+# ── source 4: Windsurf extension host logs ───────────────────────────────────
 
 def harvest_logs(windsurf_logs_root: str, out_dir: str, workspaces: List[str],
                  max_sessions: int = 20) -> int:
@@ -271,6 +371,12 @@ def main(argv=None) -> int:
         workspaces = [os.getcwd()]
 
     total = 0
+    devin_transcripts = os.path.expanduser("~/.local/share/devin/cli/transcripts")
+    n = harvest_devin_transcripts(devin_transcripts, out_dir, workspaces)
+    if not args.quiet:
+        print(f"[harvest_windsurf] devin        : {n} sessions")
+    total += n
+
     n = harvest_agentmemory(args.agentmemory, out_dir, workspaces)
     if not args.quiet:
         print(f"[harvest_windsurf] agentmemory  : {n} sessions")
