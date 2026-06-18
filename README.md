@@ -46,7 +46,7 @@ bash install.sh
 ```
 
 `install.sh` will:
-1. Use or clone [microsoft/SkillOpt](https://github.com/microsoft/SkillOpt) to `~/tools/SkillOpt` (or `--skillopt-dir`)
+1. Use or clone [microsoft/SkillOpt](https://github.com/microsoft/SkillOpt) to `<project-dir>/../SkillOpt` (or `--skillopt-dir`)
 2. Install `skillopt_sleep` (editable) into your Python environment
 3. Create `~/.skillopt-sleep-windsurf/` (runtime data dir)
 4. Seed `skillopt-sleep-learned/SKILL.md` into every detected workspace (`.windsurf/skills/` **and** `.devin/skills/`)
@@ -87,9 +87,9 @@ Optionally copy `devin-rules.snippet.md` to `.devin/rules/skillopt-sleep.md` in 
 
 ```bash
 devin mcp add skillopt-sleep \
-  --env "SKILLOPT_SLEEP_REPO=/abs/path/to/SkillOpt" \
+  --env "SKILLOPT_SLEEP_REPO=<project-dir>/../SkillOpt" \
   --env "SKILLOPT_WINDSURF_CLAUDE_HOME=$HOME/.skillopt-sleep-windsurf" \
-  -- python3 /abs/path/to/skillopt-windsurf/mcp_server.py
+  -- python3 <project-dir>/mcp_server.py
 ```
 
 ---
