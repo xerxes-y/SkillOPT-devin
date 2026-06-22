@@ -45,6 +45,67 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import unquote, urlparse
+
+# ── cross-platform path resolution (Linux + Windows + macOS) ──────────────────
+#
+# Windsurf and Devin are VS Code-family apps, so their user-data dir moves with
+# the OS:  Linux ~/.config/<App>, Windows %APPDATA%\<App>, macOS
+# ~/Library/Application Support/<App>.  Resolve all candidates and let callers
+# keep whichever actually exists, so one harvester works on every OS.
+
+def _app_data_roots(app: str) -> List[str]:
+    """User-data dir candidates for a VS Code-family app, current OS first."""
+    home = os.path.expanduser("~")
+    roots: List[str] = []
+    if os.name == "nt":
+        appdata = os.environ.get("APPDATA") or os.path.join(home, "AppData", "Roaming")
+        roots.append(os.path.join(appdata, app))
+    elif sys.platform == "darwin":
+        roots.append(os.path.join(home, "Library", "Application Support", app))
+    # XDG / Linux (also a sensible fallback everywhere)
+    xdg = os.environ.get("XDG_CONFIG_HOME") or os.path.join(home, ".config")
+    roots.append(os.path.join(xdg, app))
+    # de-dupe, preserve order
+    return list(dict.fromkeys(roots))
+
+
+def _devin_transcript_candidates() -> List[str]:
+    """Where the Devin CLI may store ATIF transcripts, per OS."""
+    home = os.path.expanduser("~")
+    cands: List[str] = []
+    if os.name == "nt":
+        for base in (os.environ.get("LOCALAPPDATA"), os.environ.get("APPDATA")):
+            if base:
+                cands.append(os.path.join(base, "devin", "cli", "transcripts"))
+    elif sys.platform == "darwin":
+        cands.append(os.path.join(home, "Library", "Application Support",
+                                  "devin", "cli", "transcripts"))
+    cands.append(os.path.join(home, ".local", "share", "devin", "cli", "transcripts"))
+    return list(dict.fromkeys(cands))
+
+
+def _first_existing(paths: List[str]) -> str:
+    """First path that exists, else the first candidate (for nice messaging)."""
+    for p in paths:
+        if os.path.exists(p):
+            return p
+    return paths[0] if paths else ""
+
+
+def _uri_to_path(folder: str) -> str:
+    """Convert a VS Code ``file://`` workspace URI to a local path, cross-platform.
+
+    Linux:   file:///home/u/proj      -> /home/u/proj
+    Windows: file:///c%3A/Users/u/p   -> c:/Users/u/p
+    """
+    if not folder.startswith("file://"):
+        return folder
+    path = unquote(urlparse(folder).path)
+    # Windows drive paths come through as '/C:/...' — strip the leading slash.
+    if os.name == "nt" and re.match(r"^/[A-Za-z]:", path):
+        path = path[1:]
+    return path
 
 # ── workspace auto-detection ─────────────────────────────────────────────────
 
@@ -60,9 +121,7 @@ def _workspaces_from_registry(storage_root: str) -> List[tuple]:
         try:
             with open(ws_json, encoding="utf-8") as f:
                 data = json.load(f)
-            folder = data.get("folder", "")
-            if folder.startswith("file://"):
-                folder = folder[len("file://"):]
+            folder = _uri_to_path(data.get("folder", ""))
             if folder and os.path.isdir(folder):
                 results.append((os.path.getmtime(ws_json), folder))
         except Exception:
@@ -74,14 +133,17 @@ def _detect_workspaces() -> List[str]:
     """Return known workspace paths (Windsurf + Devin registries), newest first."""
     env_val = os.environ.get("SKILLOPT_WINDSURF_WORKSPACES", "")
     if env_val:
-        return [p for p in env_val.split(":") if p and os.path.isdir(p)]
+        # os.pathsep so Windows 'C:\a;C:\b' splits correctly (not on the drive colon)
+        return [p for p in env_val.split(os.pathsep) if p and os.path.isdir(p)]
+
+    registries: List[str] = []
+    for app in ("Windsurf", "Devin"):
+        registries += [os.path.join(r, "User", "workspaceStorage")
+                       for r in _app_data_roots(app)]
 
     seen: set = set()
     results: List[tuple] = []
-    for registry in (
-        os.path.expanduser("~/.config/Windsurf/User/workspaceStorage"),
-        os.path.expanduser("~/.config/Devin/User/workspaceStorage"),
-    ):
+    for registry in registries:
         for mtime, folder in _workspaces_from_registry(registry):
             if folder not in seen:
                 seen.add(folder)
@@ -480,13 +542,14 @@ def main(argv=None) -> int:
     )
     parser.add_argument(
         "--windsurf-logs",
-        default=os.path.expanduser("~/.config/Windsurf/logs"),
-        help="Windsurf logs root directory",
+        default=_first_existing([os.path.join(r, "logs")
+                                 for r in _app_data_roots("Windsurf")]),
+        help="Windsurf logs root directory (default: per-OS auto-detect)",
     )
     parser.add_argument(
         "--devin-transcripts",
-        default=os.path.expanduser("~/.local/share/devin/cli/transcripts"),
-        help="Devin CLI ATIF transcripts directory",
+        default=_first_existing(_devin_transcript_candidates()),
+        help="Devin CLI ATIF transcripts directory (default: per-OS auto-detect)",
     )
     parser.add_argument(
         "--workspaces", nargs="*",

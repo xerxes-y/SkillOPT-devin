@@ -64,6 +64,17 @@ Optionally append `windsurf-rules.snippet.md` to your `.windsurfrules`.
 MCP registration is automatic if the Devin CLI is installed.
 Optionally copy `devin-rules.snippet.md` to `.devin/rules/skillopt-sleep.md` in your workspace so Devin knows to offer the sleep tools.
 
+### Windows
+
+The runtime (`mcp_server.py` + `harvest_windsurf.py`) is cross-platform and
+auto-detects Windsurf/Devin data under `%APPDATA%\Windsurf` (and `%LOCALAPPDATA%`
+for Devin transcripts) — no extra flags needed.
+
+`install.sh` is bash, so run it from **Git Bash** or **WSL**, or wire it up
+manually: add the snippet from `mcp-config.example.json` to
+`%USERPROFILE%\.codeium\windsurf\mcp_config.json` (use `python` instead of
+`python3` and absolute Windows paths in `args`/`env`).
+
 ### Manual config
 
 **Windsurf** — add to `~/.codeium/windsurf/mcp_config.json`:

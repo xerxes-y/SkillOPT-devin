@@ -22,6 +22,7 @@ import sys
 import tempfile
 import types
 import unittest
+from unittest import mock
 
 # Make the plugin modules importable regardless of where the tests are run from.
 PLUGIN_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -82,6 +83,42 @@ class TestRubric(unittest.TestCase):
         self.assertEqual(fb["verifier"], "judge")
         self.assertIsNone(fb["success"])
         self.assertTrue(any("OrderService" in c for c in fb["rubric"]))
+
+
+# ── cross-platform path resolution (Linux + Windows) ─────────────────────────
+
+class TestCrossPlatformPaths(unittest.TestCase):
+    def test_windows_app_data_root(self):
+        with mock.patch.object(hw.os, "name", "nt"), \
+             mock.patch.dict(hw.os.environ, {"APPDATA": r"C:\Users\me\AppData\Roaming"}):
+            roots = hw._app_data_roots("Windsurf")
+        self.assertTrue(any("AppData" in r and r.endswith("Windsurf") for r in roots),
+                        f"no Windows %APPDATA% root in {roots}")
+
+    def test_linux_app_data_root(self):
+        env = {k: v for k, v in hw.os.environ.items() if k != "XDG_CONFIG_HOME"}
+        with mock.patch.object(hw.os, "name", "posix"), \
+             mock.patch.object(hw.sys, "platform", "linux"), \
+             mock.patch.dict(hw.os.environ, env, clear=True):
+            roots = hw._app_data_roots("Windsurf")
+        self.assertTrue(any(r.endswith(os.path.join(".config", "Windsurf")) for r in roots),
+                        f"no ~/.config root in {roots}")
+
+    def test_uri_to_path_linux(self):
+        self.assertEqual(hw._uri_to_path("file:///home/me/proj"), "/home/me/proj")
+
+    def test_uri_to_path_windows(self):
+        with mock.patch.object(hw.os, "name", "nt"):
+            self.assertEqual(hw._uri_to_path("file:///c%3A/Users/me/proj"),
+                             "c:/Users/me/proj")
+
+    def test_env_override_splits_on_pathsep(self):
+        with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
+            joined = os.pathsep.join([a, b])
+            with mock.patch.dict(hw.os.environ, {"SKILLOPT_WINDSURF_WORKSPACES": joined}):
+                ws = hw._detect_workspaces()
+            self.assertIn(a, ws)
+            self.assertIn(b, ws)
 
 
 # ── Devin ATIF transcript path (the "works with Devin" guarantee) ─────────────
