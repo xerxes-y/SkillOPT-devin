@@ -137,6 +137,19 @@ Each tool accepts:
 
 ## Verify (no Windsurf needed)
 
+Run the test suite (stdlib-only, no pytest required):
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+It covers the harvest helpers, the Devin ATIF transcript path, the judge, the MCP
+protocol, and the **microsoft/SkillOpt engine command contract**. The one
+integration test that runs the real engine is skipped automatically unless
+`skillopt_sleep` is installed (via `install.sh`).
+
+Or smoke-test the MCP server's JSON-RPC directly:
+
 ```bash
 SKILLOPT_SLEEP_REPO=~/.local/share/SkillOpt \
 printf '%s\n' \
@@ -153,6 +166,12 @@ printf '%s\n' \
 skillopt-windsurf/
 ├── mcp_server.py              MCP server (stdlib-only, stdio) — Windsurf + Devin
 ├── harvest_windsurf.py        Transcript generator (Devin ATIF-v1.7 + agentmemory + skills + logs)
+├── judge.py                   Reference judge — scores a reply against a rubric (validation gate)
+├── fixtures/
+│   └── devin_sample.json      Sample ATIF transcript for offline testing
+├── tests/
+│   └── test_skillopt_sleep.py Test suite (harvest, Devin path, judge, MCP, engine contract)
+├── blog-skillopt-sleep.html   Walk-through / use-case blog (PO · QA · Developer)
 ├── mcp-config.example.json    Windsurf MCP config snippet
 ├── windsurf-rules.snippet.md  Paste into .windsurfrules
 ├── devin-rules.snippet.md     Copy to .devin/rules/skillopt-sleep.md
@@ -160,6 +179,49 @@ skillopt-windsurf/
 │   └── SKILL.md               Initial skill seed (replaced by sleep_adopt)
 ├── install.sh                 One-shot installer (Windsurf + Devin auto-detected)
 └── README.md
+```
+
+---
+
+## Outcomes & the validation gate
+
+SkillOpt only improves a skill **where tasks recur and have a checkable
+correctness signal**.  A bare transcript has neither, so `harvest_windsurf.py`
+enriches Devin trajectories with two things and writes them to
+`<data-dir>/outcomes.jsonl`:
+
+- **`taskKey`** — a stable `<lang>:<intent>:<target>` grouping key (e.g.
+  `java:fix:orderservice`) so repeats of the same task collapse into one
+  recurring task the gate can replay.
+- **an outcome envelope** — the checkable signal:
+  - **hard signal** when the agent recorded a test/build result:
+    `{"success": true, "verifier": "tests", "evidence": "BUILD SUCCESS",
+    "reference": {"repro": "rtk mvn test -Dtest=OrderServiceTest"}}`
+  - **deferred (judge)** when no hard signal exists:
+    `{"success": null, "verifier": "judge", "rubric": [...]}` — a rubric is
+    derived from the task so [`judge.py`](judge.py) (or the engine) can score the
+    replay instead.
+
+Score a reply against a rubric:
+
+```bash
+echo "<candidate reply>" | python3 judge.py --rubric-inline '["Addresses OrderService", "Resolves the reported defect without introducing new errors"]'
+# → 0.5
+```
+
+`judge.py` defaults to an offline keyword-coverage heuristic (no API key).
+Set `SKILLOPT_JUDGE=claude` (+ `ANTHROPIC_API_KEY`) for an LLM judge.
+
+> **Reality check:** the hard-signal path only fires if Devin/Windsurf actually
+> record test or build results in their transcripts.  If they don't, every task
+> falls to the `judge` branch — point `--devin-transcripts` at a real transcript
+> dir and inspect `outcomes.jsonl` to find out which case you're in.
+
+Try it on the bundled fixture:
+
+```bash
+python3 harvest_windsurf.py --devin-transcripts fixtures --out-dir /tmp/skillopt-test
+cat /tmp/skillopt-test/outcomes.jsonl
 ```
 
 ---

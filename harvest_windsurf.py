@@ -107,6 +107,7 @@ def _write_session(
     out_dir: str, project: str, session_id: str,
     user_prompts: List[str], assistant_replies: List[str],
     timestamp_base_ms: float,
+    task_key: Optional[str] = None,
 ) -> None:
     slug = _slug(project)
     session_dir = os.path.join(out_dir, "projects", slug)
@@ -115,14 +116,18 @@ def _write_session(
     ts = timestamp_base_ms
     with open(out_path, "w", encoding="utf-8") as f:
         for user_text, asst_text in zip(user_prompts, assistant_replies):
-            f.write(json.dumps({
+            user_rec = {
                 "type": "user",
                 "message": {"role": "user", "content": user_text},
                 "cwd": project,
                 "timestamp": _iso(ts),
                 "sessionId": session_id,
                 "version": "1.0",
-            }, ensure_ascii=False) + "\n")
+            }
+            if task_key:
+                # grouping key so the miner can collapse repeats into one recurring task
+                user_rec["taskKey"] = task_key
+            f.write(json.dumps(user_rec, ensure_ascii=False) + "\n")
             ts += 1000
             f.write(json.dumps({
                 "type": "assistant",
@@ -145,6 +150,124 @@ def _infer_project(text: str, workspaces: List[str]) -> str:
         if os.path.basename(ws.rstrip("/")).lower() in text.lower():
             return ws
     return workspaces[0] if workspaces else os.getcwd()
+
+# ── task identity + outcome extraction (fuel for the validation gate) ─────────
+#
+# SkillOpt's gate only works "where tasks recur and have a checkable correctness
+# signal."  These helpers add the two things a raw transcript lacks:
+#   * a stable taskKey so repeats collapse into one recurring task, and
+#   * an outcome envelope (success + verifier + re-runnable reference) so the
+#     held-out replay has something to score against.
+
+_LANG_HINTS = [
+    ("java",   r"(java|spring|maven|\bmvn\b|gradle|\.java\b|lombok)"),
+    ("python", r"(python|pytest|\bpip\b|\.py\b|django|flask)"),
+    ("ts",     r"(typescript|\.tsx?\b|\bnpm\b|jest|node)"),
+    ("js",     r"(javascript|\.jsx?\b)"),
+    ("sql",    r"(\bsql\b|select\s|mariadb|mysql|postgres|\.sql\b)"),
+    ("go",     r"(golang|\bgo test\b|\.go\b)"),
+    ("rust",   r"(rust|cargo|\.rs\b)"),
+]
+_INTENT_HINTS = [
+    ("fix",       r"(fix|bug|error|fail|npe|exception|broken|crash)"),
+    ("implement", r"(implement|add|create|build|introduce|support)"),
+    ("refactor",  r"(refactor|clean ?up|rename|extract|simplify)"),
+    ("test",      r"(test|coverage|assert)"),
+    ("review",    r"(review|audit|inspect)"),
+    ("optimize",  r"(optimi[sz]e|perf|speed up|slow)"),
+    ("explain",   r"(explain|understand|what does|how does)"),
+]
+_STOPWORDS = {"please", "this", "that", "with", "from", "into", "should",
+              "would", "code", "using", "the", "have"}
+
+
+def _normalize_task_key(text: str, project: str) -> str:
+    """Stable '<lang>:<intent>:<target>' grouping key for a task."""
+    low = text.lower()
+    lang = next((n for n, pat in _LANG_HINTS if re.search(pat, low)), "general")
+    intent = next((n for n, pat in _INTENT_HINTS if re.search(pat, low)), "task")
+    # target: prefer a CamelCase identifier, then a filename, then first real word
+    m = re.search(r"\b([A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)+)\b", text)  # CamelCase
+    if not m:
+        m = re.search(r"\b([\w-]+\.\w+)\b", text)                     # filename.ext
+    if m:
+        target = m.group(1)
+    else:
+        # first content word that isn't a stopword or an intent verb (e.g. "implement")
+        target = next((w for w in re.findall(r"[a-zA-Z]{4,}", low)
+                       if w not in _STOPWORDS
+                       and not any(re.search(pat, w) for _, pat in _INTENT_HINTS)),
+                      "general")
+    target = re.sub(r"[^a-zA-Z0-9]+", "-", target).strip("-").lower()[:40] or "general"
+    return f"{lang}:{intent}:{target}"
+
+
+_PASS_PAT = re.compile(
+    r"(build success|all tests? pass(?:ed)?|\b\d+ passed\b|\b0 failed\b|"
+    r"tests? pass(?:ed)?|✓|no errors)", re.IGNORECASE)
+_FAIL_PAT = re.compile(
+    r"(build failure|tests? failed|\b[1-9]\d* failed\b|error:|traceback|"
+    r"assertion ?error)", re.IGNORECASE)  # note: "0 failed" must NOT match
+_CMD_PAT = re.compile(
+    r"((?:rtk\s+)?(?:mvn|gradle|pytest|npm(?:\s+run)?\s+test|yarn\s+test|"
+    r"go\s+test|cargo\s+test)[^\n`]*)", re.IGNORECASE)
+
+
+def _detect_outcome(messages: List[str]) -> Optional[Dict[str, Any]]:
+    """Best-effort checkable signal from agent messages. None ⇒ no hard signal."""
+    blob = "\n".join(m for m in messages if m)
+    pass_hit, fail_hit = _PASS_PAT.search(blob), _FAIL_PAT.search(blob)
+    if not pass_hit and not fail_hit:
+        return None
+    verifier = "tests" if re.search(r"test|pytest", blob, re.IGNORECASE) else "build"
+    out: Dict[str, Any] = {
+        "success": bool(pass_hit) and not fail_hit,
+        "verifier": verifier,
+        "evidence": (pass_hit or fail_hit).group(0).strip(),
+    }
+    cmd = _CMD_PAT.search(blob)
+    if cmd:
+        # keep only the command itself, dropping any "-> result" / ": output" tail
+        repro = re.split(r"\s*(?:->|→|:|,)\s*", cmd.group(1))[0].strip()
+        out["reference"] = {"repro": repro}
+    return out
+
+
+def _build_rubric(user_prompt: str) -> List[str]:
+    """Derive checkable criteria from the task so a judge has something to score."""
+    crit: List[str] = []
+    ids = re.findall(r"\b([A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)+|[\w-]+\.\w+)\b", user_prompt)
+    for i in dict.fromkeys(ids):           # dedupe, preserve order
+        crit.append(f"Addresses {i}")
+    intent = _normalize_task_key(user_prompt, "").split(":")[1]
+    crit.append({
+        "fix":       "Resolves the reported defect without introducing new errors",
+        "implement": "Implements the requested behavior end to end",
+        "refactor":  "Preserves behavior while improving structure",
+        "test":      "Adds or fixes tests that actually exercise the change",
+        "optimize":  "Improves performance without changing results",
+    }.get(intent, "Satisfies the user's stated request"))
+    crit.append("Response is concrete and actionable, not a restatement of the task")
+    return crit[:5]
+
+
+def _judge_rubric_fallback(user_prompt: str) -> Dict[str, Any]:
+    """When no hard signal exists, attach a rubric and mark the task for judge
+    scoring. success=None tells the gate to defer/judge rather than trust it.
+    The actual scoring is done by judge.py (or the engine) at replay time."""
+    return {
+        "success": None,
+        "verifier": "judge",
+        "rubric": _build_rubric(user_prompt or ""),
+    }
+
+
+def _write_outcome(out_dir: str, session_id: str, task_key: str, project: str,
+                   ts_ms: float, outcome: Dict[str, Any]) -> None:
+    rec = {"type": "outcome", "sessionId": session_id, "taskKey": task_key,
+           "project": project, "timestamp": _iso(ts_ms), **outcome}
+    with open(os.path.join(out_dir, "outcomes.jsonl"), "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 # ── source 1: Devin ATIF-v1.7 transcripts ────────────────────────────────────
 
@@ -200,17 +323,23 @@ def harvest_devin_transcripts(
             project = workspaces[0] if workspaces else os.getcwd()
         if ts_base is None:
             ts_base = datetime.now(tz=timezone.utc).timestamp() * 1000
+        # Identity + outcome: what makes this trajectory replayable & gradeable.
+        task_key = _normalize_task_key(user_prompts[0], project)
+        outcome = _detect_outcome(agent_replies) or _judge_rubric_fallback(user_prompts[0])
         # Pair turns; pad shorter list
         n = max(len(user_prompts), len(agent_replies))
         user_prompts += [""] * (n - len(user_prompts))
         agent_replies += [""] * (n - len(agent_replies))
+        sid = f"devin_{session_id}"
         _write_session(
-            out_dir, project, f"devin_{session_id}",
+            out_dir, project, sid,
             user_prompts=[p for p in user_prompts if p],
             assistant_replies=[r if r else "[no reply recorded]" for r, p in
                                zip(agent_replies, user_prompts) if p],
             timestamp_base_ms=ts_base,
+            task_key=task_key,
         )
+        _write_outcome(out_dir, sid, task_key, project, ts_base, outcome)
         _append_history(
             out_dir,
             display=(user_prompts[0] or session_id)[:120],
@@ -355,6 +484,11 @@ def main(argv=None) -> int:
         help="Windsurf logs root directory",
     )
     parser.add_argument(
+        "--devin-transcripts",
+        default=os.path.expanduser("~/.local/share/devin/cli/transcripts"),
+        help="Devin CLI ATIF transcripts directory",
+    )
+    parser.add_argument(
         "--workspaces", nargs="*",
         help="Workspace paths (default: auto-detect from Windsurf registry)",
     )
@@ -371,7 +505,7 @@ def main(argv=None) -> int:
         workspaces = [os.getcwd()]
 
     total = 0
-    devin_transcripts = os.path.expanduser("~/.local/share/devin/cli/transcripts")
+    devin_transcripts = os.path.expanduser(args.devin_transcripts)
     n = harvest_devin_transcripts(devin_transcripts, out_dir, workspaces)
     if not args.quiet:
         print(f"[harvest_windsurf] devin        : {n} sessions")

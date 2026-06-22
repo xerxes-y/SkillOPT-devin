@@ -1,6 +1,6 @@
 ---
 name: skillopt-sleep-learned
-description: Auto-evolved skill — optimised nightly by SkillOpt-Sleep from past Windsurf/Cascade sessions. Covers recurring patterns in Java/Spring Boot development, PROSET workflow, Robot Framework tests, and database analysis.
+description: Auto-evolved skill — optimised nightly by SkillOpt-Sleep from past Windsurf/Cascade sessions. Covers recurring patterns in Java/Spring Boot development, team workflow, Robot Framework tests, and database analysis.
 ---
 
 # SkillOpt-Sleep Learned Skill
@@ -11,13 +11,13 @@ first sleep cycle runs.
 
 ## Current Patterns
 
-### Java / Spring Boot (PROSET projects)
+### Java / Spring Boot
 - Always check for `@Transactional` propagation when persistence methods are called across service boundaries.
 - Prefer `Optional.orElseThrow(NotFoundException::new)` over `.get()` on repository results.
 - Use `@Slf4j` (Lombok) for logging; never use `System.out.println` in production code.
 - Repository query methods returning lists should use `List<T>`, never `Iterable<T>`, for downstream compatibility.
 
-### PROSET Workflow
+### Team Workflow
 - Before implementing a Jira story, read the ticket description AND linked acceptance criteria in full.
 - Robot Framework keywords go in `api_keywords.robot`; helper setup/teardown logic stays in `resource_keywords.robot`.
 - Always run `rtk mvn test` locally before pushing; failing tests block the pipeline.
@@ -25,7 +25,7 @@ first sleep cycle runs.
 
 ### Database Analysis (MariaDB)
 - Use `SELECT ... LIMIT 20` for first-pass exploration; never `SELECT *` on large tables.
-- When joining `backoffice_p` and `hiqtrading_p` schemas, verify FK alignment on `exchange_id` before querying.
+- When joining across schemas, verify foreign-key alignment on the shared key before querying.
 - The `agentmemory` MCP tool stores findings from past queries — check it before re-running expensive queries.
 
 ### Code Review

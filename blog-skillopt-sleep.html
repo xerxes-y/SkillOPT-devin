@@ -15,6 +15,8 @@
       --green: #4ade80;
       --yellow: #fbbf24;
       --red: #f87171;
+      --pink: #f472b6;
+      --cyan: #22d3ee;
       --text: #e2e8f0;
       --muted: #8892b0;
       --code-bg: #0d1117;
@@ -365,6 +367,49 @@
       text-align: right;
     }
 
+    /* ── Role cards ── */
+    .role-head { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+    .role-avatar { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; }
+    .role-avatar.po  { background: rgba(244,114,182,0.15); border: 1px solid rgba(244,114,182,0.4); }
+    .role-avatar.qa  { background: rgba(34,211,238,0.15);  border: 1px solid rgba(34,211,238,0.4); }
+    .role-avatar.dev { background: rgba(74,222,128,0.15);  border: 1px solid rgba(74,222,128,0.4); }
+    .role-title { font-size: 18px; font-weight: 700; color: #fff; line-height: 1.2; }
+    .role-sub { font-size: 13px; color: var(--muted); }
+    .role-card ul { list-style: none; padding: 0; margin: 0 0 14px; }
+    .role-card li { padding: 7px 0; font-size: 15px; display: flex; gap: 10px; align-items: flex-start; color: var(--text); }
+    .role-card li::before { content: '→'; color: var(--accent); font-weight: 700; flex-shrink: 0; }
+    .role-signal { font-size: 13px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 12px; }
+    .role-signal strong { color: var(--accent); }
+
+    /* ── Persona scenario blocks ── */
+    .persona { display: flex; align-items: center; gap: 18px; padding: 18px 20px; border-radius: var(--radius); margin-bottom: 16px; border: 1px solid var(--border); background: linear-gradient(135deg, var(--surface) 0%, var(--surface2) 100%); }
+    .persona .p-avatar { width: 52px; height: 52px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 26px; flex-shrink: 0; }
+    .persona.po  .p-avatar { background: rgba(244,114,182,0.15); border: 1px solid rgba(244,114,182,0.4); }
+    .persona.qa  .p-avatar { background: rgba(34,211,238,0.15);  border: 1px solid rgba(34,211,238,0.4); }
+    .persona.dev .p-avatar { background: rgba(74,222,128,0.15);  border: 1px solid rgba(74,222,128,0.4); }
+    .persona .p-role { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+    .persona.po  .p-role { color: var(--pink); }
+    .persona.qa  .p-role { color: var(--cyan); }
+    .persona.dev .p-role { color: var(--green); }
+    .persona .p-name { font-size: 18px; font-weight: 800; color: #fff; line-height: 1.25; }
+
+    .tags { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0; }
+    .tag { font-family: 'Consolas','SF Mono',monospace; font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 99px; border: 1px solid var(--border); color: var(--muted); background: var(--surface2); }
+    .tag.key  { color: var(--accent); border-color: rgba(108,138,255,0.35); background: rgba(108,138,255,0.1); }
+    .tag.hard { color: var(--green);  border-color: rgba(74,222,128,0.35);  background: rgba(74,222,128,0.1); }
+    .tag.soft { color: var(--yellow); border-color: rgba(251,191,36,0.35);  background: rgba(251,191,36,0.1); }
+
+    .problem-box h4 { color: var(--red); margin: 0 0 10px; font-size: 15px; }
+    .solution-box h4 { color: var(--green); margin: 0 0 10px; font-size: 15px; }
+    .problem-box ul, .solution-box ul { padding-left: 16px; color: var(--muted); font-size: 14.5px; line-height: 1.85; }
+
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14.5px; }
+    th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }
+    td code { font-family: 'Consolas','SF Mono',monospace; font-size: 13px; color: var(--accent); }
+
+    pre .num { color: var(--accent2); }
+
     /* ── Footer ── */
     footer {
       border-top: 1px solid var(--border);
@@ -388,9 +433,9 @@
   <div class="badge">Developer Tooling · AI Assistants · 2026</div>
   <h1>Your AI Coding Assistant<br>Gets Smarter While You Sleep</h1>
   <p class="subtitle">
-    A practical guide to SkillOpt-Sleep — the nightly self-evolution engine
-    that turns your daily work sessions into permanent improvements for
-    Windsurf and Devin IDE.
+    A practical guide to SkillOpt-Sleep — the nightly self-evolution engine that turns
+    your team's daily work into lasting, reviewed improvements to your Windsurf and Devin
+    skills. For product owners, testers, and developers alike.
   </p>
   <div class="meta">
     <span>😴 SkillOpt-Sleep</span>
@@ -420,7 +465,7 @@
           <li>Skills are static — never updated</li>
           <li>You manually tune prompts (tedious)</li>
           <li>Agent repeats the same mistakes</li>
-          <li>Recurring tasks get the same avg quality</li>
+          <li>Recurring tasks plateau — no improvement over time</li>
           <li>Institutional knowledge lives only in your head</li>
         </ul>
       </div>
@@ -446,12 +491,12 @@
         <div style="flex:1; min-width:240px;">
           <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); margin-bottom:8px;">Foundation</div>
           <div style="font-size:16px; font-weight:700; color:#fff; margin-bottom:4px;">Microsoft SkillOpt</div>
-          <div style="font-size:15px; color:var(--muted);">Research paper + open-source engine for self-evolving agent skills. Proven across 6 benchmarks and 7 models.</div>
+          <div style="font-size:15px; color:var(--muted);">Research paper + open-source engine for self-evolving agent skills. Evaluated across six benchmarks, seven models, and three execution harnesses (direct chat, Codex, Claude Code) — best or tied on all 52 settings.</div>
         </div>
         <div style="color:var(--accent); font-size:28px; align-self:center;">→</div>
         <div style="flex:1; min-width:240px;">
           <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:var(--accent); margin-bottom:8px;">Our Fork</div>
-          <div style="font-size:16px; font-weight:700; color:#fff; margin-bottom:4px;">SkillOPT @ scm.sys.flatex.com</div>
+          <div style="font-size:16px; font-weight:700; color:#fff; margin-bottom:4px;">SkillOPT-devin (this fork)</div>
           <div style="font-size:15px; color:var(--muted);">Extended and configured specifically for <strong style="color:var(--text);">Devin IDE + Windsurf</strong> — with MCP server integration, skills consolidation, and IDE wiring out of the box.</div>
         </div>
       </div>
@@ -467,34 +512,29 @@
     <ul class="checklist" style="margin: 16px 0 0;">
       <li>MCP server exposing all 5 tools directly in your AI assistant chat</li>
       <li>Windsurf-aware harvesting from agentmemory, SKILL.md files, and session logs</li>
-      <li>Single master config wiring Devin IDE, Windsurf, Codeium, and IntelliJ together</li>
+      <li>Single master config wiring Devin, Windsurf, Codeium, and IntelliJ together</li>
       <li>Global skills directory so evolved skills propagate instantly across all projects</li>
       <li>Devin IDE shim that survives internal database path mismatches</li>
     </ul>
 
-    <p style="margin-top:16px;">
-      The repo lives at
-      <strong><code>scm.sys.flatex.com/ai/SkillOPT</code></strong> and is what this blog
-      documents — not the upstream Microsoft research, but the <em>practical integration</em>
-      we built on top of it.
+    <h3 style="margin: 24px 0 12px;">Devin-Specific Integration</h3>
+    <p style="margin-bottom:12px;">
+      Beyond the general MCP plumbing, we built <strong>Devin-specific adaptations</strong> to bridge Microsoft's engine — whose reference harness uses the Claude Code transcript format — with Devin's architecture:
     </p>
+    <ul class="checklist" style="margin: 0 0 16px;">
+      <li><strong>Devin ATIF-v1.7 transcript harvesting</strong> — Native support for Devin's session format from <code>~/.local/share/devin/cli/transcripts/*.json</code>, converted to Claude Code-compatible JSONL</li>
+      <li><strong>Devin workspace auto-detection</strong> — Automatically finds Devin workspaces from <code>~/.config/Devin/User/workspaceStorage/*/workspace.json</code></li>
+      <li><strong>Dual skill syncing</strong> — After <code>sleep_adopt</code>, evolved skills automatically sync to both <code>.windsurf/skills/</code> <strong>and</strong> <code>.devin/skills/</code> directories</li>
+      <li><strong>Devin CLI MCP auto-registration</strong> — Installer automatically runs <code>devin mcp add skillopt-sleep</code> when Devin CLI is detected on PATH</li>
+      <li><strong>Devin rules snippet</strong> — Custom <code>devin-rules.snippet.md</code> tells Devin when to offer sleep tools and how to use them effectively</li>
+      <li><strong>Simultaneous IDE support</strong> — Single MCP server and harvester work with both Windsurf and Devin at the same time, learning from sessions in either environment</li>
+    </ul>
 
-    <div style="background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.35); border-radius: var(--radius); padding: 20px 24px; margin-top: 20px; display:flex; gap:16px; align-items:flex-start;">
-      <span style="font-size:22px; flex-shrink:0; margin-top:2px;">🔐</span>
-      <div>
-        <div style="font-size:15px; font-weight:700; color: #fbbf24; margin-bottom:6px;">Access Required — Request via IAM Portal</div>
-        <div style="font-size:15px; color: var(--text); line-height:1.6;">
-          To clone or use <code>scm.sys.flatex.com/ai/SkillOPT</code> you need to be granted
-          access first. Request it through the company IAM portal:
-        </div>
-        <div style="margin-top:12px;">
-          <a href="https://iam-portal.sys.flatexdegiro.com/" target="_blank"
-             style="display:inline-flex; align-items:center; gap:8px; background: rgba(251,191,36,0.12); border: 1px solid rgba(251,191,36,0.4); color: #fbbf24; padding: 8px 16px; border-radius: 8px; font-size:14px; font-weight:600; text-decoration:none;">
-            🔗 iam-portal.sys.flatexdegiro.com
-          </a>
-        </div>
-      </div>
-    </div>
+    <p style="margin-top:16px;">
+      This blog documents that fork — not the upstream Microsoft research, but the
+      <em>practical integration</em> we built on top of it to make SkillOpt-Sleep work
+      inside Devin and Windsurf.
+    </p>
   </section>
 
   <!-- ── WHAT IS IT ── -->
@@ -502,9 +542,9 @@
     <h2><span class="icon">💡</span> What Is SkillOpt-Sleep?</h2>
 
     <p>
-      <strong>SkillOpt-Sleep</strong> is a nightly offline self-evolution engine for local coding agents.
-      It's a research project by Microsoft (<a href="https://arxiv.org/abs/2605.23904" target="_blank">arXiv 2605.23904</a>)
-      that applies machine-learning discipline — epochs, learning rates, validation gates — to
+      <strong>SkillOpt-Sleep</strong> is our nightly, offline self-evolution engine for local coding agents.
+      It's built on SkillOpt, a Microsoft Research project (<a href="https://arxiv.org/abs/2605.23904" target="_blank">arXiv 2605.23904</a>)
+      that applies machine-learning discipline — scored rollouts, bounded edits, and held-out validation gates — to
       the text inside your <code>SKILL.md</code> files, <strong>without touching any model weights</strong>.
     </p>
 
@@ -558,8 +598,9 @@
 
     <h3>Data Sources It Harvests</h3>
     <ul class="checklist">
+      <li><strong>Devin transcripts</strong> — Native ATIF-v1.7 sessions from <code>~/.local/share/devin/cli/transcripts/*.json</code> with real user↔agent turns</li>
       <li><strong>agentmemory</strong> — Memories saved by the MCP agentmemory server across all your sessions</li>
-      <li><strong>SKILL.md files</strong> — Your existing skill definitions used as training signal</li>
+      <li><strong>SKILL.md files</strong> — Your existing skill definitions from both <code>.windsurf/skills/</code> and <code>.devin/skills/</code> used as training signal</li>
       <li><strong>Windsurf / Cascade logs</strong> — Task snippets extracted from IDE session logs</li>
     </ul>
 
@@ -620,19 +661,261 @@
       <p style="margin-bottom:0;">
         Most teams spend hours tweaking system prompts manually. With SkillOpt-Sleep,
         your prompts <strong>tune themselves</strong>. Run <code>sleep_run</code> after a productive
-        week and <code>sleep_adopt</code> to apply. The whole cycle takes one API call and
+        week and <code>sleep_adopt</code> to apply. The whole cycle is one command and
         a quick review.
       </p>
     </div>
   </section>
 
-  <!-- ── WHAT ACTUALLY CHANGES ── -->
+  <!-- ── WHAT EACH ROLE CAN ACHIEVE ── -->
   <section>
-    <h2><span class="icon">�</span> What Actually Changes After a Few Nights</h2>
+    <h2><span class="icon">👥</span> What Each Role Can Achieve</h2>
 
     <p>
-      Forget benchmark numbers. Here's what you notice in your daily work after
-      SkillOpt-Sleep has run a few cycles on your real sessions.
+      SkillOpt-Sleep isn't only for developers. Anyone on the team who does the
+      <strong>same kind of task over and over</strong> in Windsurf or Devin gets sharper at it,
+      because the engine learns from what you keep, edit, and reject. Here's what it means for
+      three common roles — in plain terms.
+    </p>
+
+    <div class="card role-card">
+      <div class="role-head">
+        <div class="role-avatar po">📐</div>
+        <div>
+          <div class="role-title">Product Owner</div>
+          <div class="role-sub">Turns fuzzy asks into clear, testable stories</div>
+        </div>
+      </div>
+      <ul>
+        <li>Draft acceptance criteria in <strong>your team's house format</strong> — without re-explaining it every time</li>
+        <li>Stop forgetting the boring-but-critical parts: limits, failure paths, analytics events</li>
+        <li>Slice big epics into stories that follow your "definition of ready"</li>
+        <li>Spend your review time on wording, not on fixing the same gaps in every draft</li>
+      </ul>
+      <div class="role-signal">
+        <strong>What it learns from:</strong> the parts of each draft you <em>rewrite</em>. Your edits
+        quietly become the rubric that keeps the next draft honest. No style guide to maintain.
+      </div>
+    </div>
+
+    <div class="card role-card">
+      <div class="role-head">
+        <div class="role-avatar qa">🔬</div>
+        <div>
+          <div class="role-title">Tester / QA</div>
+          <div class="role-sub">Decides whether "done" is really done</div>
+        </div>
+      </div>
+      <ul>
+        <li>Generate test cases that already include <strong>negative, auth, and boundary</strong> cases — not just the happy path</li>
+        <li>Reuse your stable data-builders and keywords instead of brittle one-offs</li>
+        <li>Tag tests so they land in the right pipeline stage automatically</li>
+        <li>Carry forward the exact edge cases that <em>broke production before</em>, so they never slip again</li>
+      </ul>
+      <div class="role-signal">
+        <strong>What it learns from:</strong> the strongest signal on the team — your tests actually
+        <em>run</em>. Pass, fail, or flaky is a hard, checkable result the validation gate trusts directly.
+      </div>
+    </div>
+
+    <div class="card role-card">
+      <div class="role-head">
+        <div class="role-avatar dev">⚙️</div>
+        <div>
+          <div class="role-title">Developer</div>
+          <div class="role-sub">Ships and debugs the code behind the feature</div>
+        </div>
+      </div>
+      <ul>
+        <li>Get code that follows <strong>your codebase's conventions</strong>, not generic best practices</li>
+        <li>Stop seeing suggestions you <em>always reject</em> — the agent learns from your reverts</li>
+        <li>Skip the "re-discover the project structure" step at the start of every session</li>
+        <li>Write shorter prompts: "generate UserService" instead of a paragraph of context</li>
+      </ul>
+      <div class="role-signal">
+        <strong>What it learns from:</strong> your build and test results (a hard pass/fail) plus the
+        patterns you accept versus revert — so the skill converges on how your team actually writes code.
+      </div>
+    </div>
+
+    <div class="callout">
+      <strong>One brain, shared by all three:</strong> the engine doesn't care about job titles — only
+      that a task <em>recurs</em> and has a <em>checkable signal</em>. The harder signals (QA's tests,
+      the developer's builds) even help validate improvements that make the PO's stories better.
+    </div>
+  </section>
+
+  <!-- ── ROLE SCENARIOS (DEEP DIVE) ── -->
+  <section>
+    <h2><span class="icon">🎬</span> One Feature, Three Roles — A Worked Example</h2>
+
+    <p>
+      Here's the same machinery up close. A team is building <strong>"Instant Payout"</strong> — withdraw
+      funds in seconds, capped by a per-day SEPA limit. Three people touch it, and each produces a
+      different <strong>correctness signal</strong> the validation gate knows how to use.
+    </p>
+
+    <!-- PO -->
+    <div class="persona po">
+      <div class="p-avatar">📐</div>
+      <div>
+        <div class="p-role">Product Owner · Priya</div>
+        <div class="p-name">"Turn this ticket into proper acceptance criteria"</div>
+      </div>
+    </div>
+    <div class="tags">
+      <span class="tag key">taskKey: general:implement:acceptance-criteria</span>
+      <span class="tag soft">verifier: judge</span>
+    </div>
+    <div class="two-col">
+      <div class="problem-box">
+        <h4>❌ Before sleep learns her</h4>
+        <ul>
+          <li>Generic, happy-path-only criteria</li>
+          <li>Forgets the SEPA cap &amp; the failure path</li>
+          <li>Priya rewrites ~50% of every draft</li>
+        </ul>
+      </div>
+      <div class="solution-box">
+        <h4>✅ After a week of nights</h4>
+        <ul>
+          <li>Stories in her house format, INVEST-shaped</li>
+          <li>Always asks for the limit &amp; rejection path</li>
+          <li>Priya edits ~10% — mostly wording</li>
+        </ul>
+      </div>
+    </div>
+    <p style="margin-top:14px;">
+      There's no test suite for a user story, so this lands on the <strong>judge</strong> branch: a rubric is
+      derived from the task — <em>mined from the parts Priya keeps correcting</em> — and an edit ships only if it scores higher.
+    </p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-dot red"></span><span class="code-dot yellow"></span><span class="code-dot green"></span><span>outcomes.jsonl — Priya's task</span></div>
+      <pre>{
+  <span class="key">"taskKey"</span>: <span class="str">"general:implement:acceptance-criteria"</span>,
+  <span class="key">"verifier"</span>: <span class="str">"judge"</span>,
+  <span class="key">"success"</span>: <span class="num">null</span>,            <span class="comment">// deferred to the judge</span>
+  <span class="key">"rubric"</span>: [
+    <span class="str">"States the per-day SEPA limit and over-limit behavior"</span>,
+    <span class="str">"Covers the rejected-payout path, not just happy path"</span>,
+    <span class="str">"Lists the analytics events to emit"</span>
+  ]
+}</pre>
+    </div>
+
+    <!-- QA -->
+    <div class="persona qa">
+      <div class="p-avatar">🔬</div>
+      <div>
+        <div class="p-role">Tester / QA · Tom</div>
+        <div class="p-name">"Generate the test cases for this story"</div>
+      </div>
+    </div>
+    <div class="tags">
+      <span class="tag key">taskKey: python:test:instant-payout</span>
+      <span class="tag hard">verifier: tests</span>
+    </div>
+    <div class="two-col">
+      <div class="problem-box">
+        <h4>❌ Before</h4>
+        <ul>
+          <li>Happy-path only; misses boundaries</li>
+          <li>Forgets auth-failure &amp; over-limit cases</li>
+          <li>Brittle selectors that go flaky</li>
+        </ul>
+      </div>
+      <div class="solution-box">
+        <h4>✅ After</h4>
+        <ul>
+          <li>Auto-adds negative, auth &amp; boundary cases</li>
+          <li>Knows the over-limit amount that broke prod</li>
+          <li>Reuses stable data-builder keywords</li>
+        </ul>
+      </div>
+    </div>
+    <p style="margin-top:14px;">
+      Tom has the <strong>strongest</strong> signal on the team: his output runs. Pass, fail, or flaky is a
+      <strong>hard, checkable result</strong> — no judge needed. An edit is accepted only if its tests actually pass.
+    </p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-dot red"></span><span class="code-dot yellow"></span><span class="code-dot green"></span><span>outcomes.jsonl — Tom's task</span></div>
+      <pre>{
+  <span class="key">"taskKey"</span>: <span class="str">"python:test:instant-payout"</span>,
+  <span class="key">"verifier"</span>: <span class="str">"tests"</span>,
+  <span class="key">"success"</span>: <span class="num">true</span>,
+  <span class="key">"evidence"</span>: <span class="str">"12 passed, 0 failed (incl. over-limit + auth-fail)"</span>,
+  <span class="key">"reference"</span>: { <span class="key">"repro"</span>: <span class="str">"rtk pytest tests/payout -q"</span> }
+}</pre>
+    </div>
+
+    <!-- DEV -->
+    <div class="persona dev">
+      <div class="p-avatar">⚙️</div>
+      <div>
+        <div class="p-role">Developer · Deniz</div>
+        <div class="p-name">"Implement / fix this service"</div>
+      </div>
+    </div>
+    <div class="tags">
+      <span class="tag key">taskKey: java:implement:payoutservice</span>
+      <span class="tag hard">verifier: build</span>
+      <span class="tag soft">+ rejected-diff signal</span>
+    </div>
+    <div class="two-col">
+      <div class="problem-box">
+        <h4>❌ Before</h4>
+        <ul>
+          <li>Re-suggests patterns the team banned</li>
+          <li>Generic error handling, no <code>@Transactional</code></li>
+          <li>Re-discovers the package layout each time</li>
+        </ul>
+      </div>
+      <div class="solution-box">
+        <h4>✅ After</h4>
+        <ul>
+          <li>Stops re-proposing rejected patterns</li>
+          <li>Applies the team's persistence conventions</li>
+          <li>Knows the codebase; prompts get shorter</li>
+        </ul>
+      </div>
+    </div>
+    <div class="code-block">
+      <div class="code-header"><span class="code-dot red"></span><span class="code-dot yellow"></span><span class="code-dot green"></span><span>outcomes.jsonl — Deniz's task</span></div>
+      <pre>{
+  <span class="key">"taskKey"</span>: <span class="str">"java:implement:payoutservice"</span>,
+  <span class="key">"verifier"</span>: <span class="str">"build"</span>,
+  <span class="key">"success"</span>: <span class="num">true</span>,
+  <span class="key">"evidence"</span>: <span class="str">"BUILD SUCCESS"</span>,
+  <span class="key">"reference"</span>: { <span class="key">"repro"</span>: <span class="str">"rtk mvn verify -pl payout-service"</span> }
+}</pre>
+    </div>
+
+    <h3>The same gate, three signals</h3>
+    <table>
+      <thead>
+        <tr><th>Role</th><th>Recurring task</th><th>Verifier</th><th>Signal strength</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>📐 Product Owner</td><td><code>…:acceptance-criteria</code></td><td><code>judge</code></td><td>Soft — rubric mined from edits</td></tr>
+        <tr><td>🔬 Tester</td><td><code>…:test:instant-payout</code></td><td><code>tests</code></td><td>Hard — runnable pass/fail</td></tr>
+        <tr><td>⚙️ Developer</td><td><code>…:implement:payoutservice</code></td><td><code>build</code></td><td>Hard + rejected-diff behavior</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout">
+      <strong>The compounding magic:</strong> when QA's "always test the over-limit path" gets baked in,
+      Priya's acceptance-criteria skill starts demanding that path too — and Deniz's code already handles it.
+      One feature, three roles, one skill that gets sharper every night.
+    </div>
+  </section>
+
+  <!-- ── WHAT ACTUALLY CHANGES ── -->
+  <section>
+    <h2><span class="icon">📊</span> What Actually Changes After a Few Nights</h2>
+
+    <p>
+      Beyond the benchmark numbers, here's the progression you can expect as
+      SkillOpt-Sleep runs on your real sessions.
     </p>
 
     <div class="card" style="margin-bottom:16px;">
@@ -809,10 +1092,10 @@
 
   <!-- ── HOW TO USE ── -->
   <section>
-    <h2><span class="icon">�</span> How to Use It in Windsurf</h2>
+    <h2><span class="icon">🌊</span> How to Use It in Windsurf</h2>
 
     <p>
-      Once you have access to <strong>scm.sys.flatex.com/ai/SkillOPT</strong> and the MCP server
+      Once the MCP server
       is registered in Windsurf, all five tools are available directly in your AI assistant chat.
       No separate CLI, no scripts to run manually — just talk to your assistant.
     </p>
@@ -889,6 +1172,45 @@
     </div>
   </section>
 
+  <!-- ── HOW TO USE IN DEVIN ── -->
+  <section>
+    <h2><span class="icon">🤖</span> How to Use It in Devin</h2>
+
+    <p>
+      Devin integration is identical in functionality — the same 5 MCP tools are available
+      in your Devin chat. The setup is handled automatically by the installer, which detects
+      Devin CLI and registers the MCP server for you.
+    </p>
+
+    <h3>Devin-Specific Setup</h3>
+    <ul class="checklist" style="margin: 16px 0;">
+      <li><strong>Auto MCP registration:</strong> Installer runs <code>devin mcp add skillopt-sleep</code> when Devin CLI is detected</li>
+      <li><strong>Devin rules snippet:</strong> Optional <code>devin-rules.snippet.md</code> tells Devin when to offer sleep tools</li>
+      <li><strong>Dual skill syncing:</strong> After <code>sleep_adopt</code>, skills sync to both <code>.devin/skills/</code> and <code>.windsurf/skills/</code></li>
+      <li><strong>Native transcript format:</strong> Harvests Devin's ATIF-v1.7 format directly from <code>~/.local/share/devin/cli/transcripts/</code></li>
+    </ul>
+
+    <h3>Using the Sleep Tools in Devin</h3>
+    <p>
+      The workflow is identical to Windsurf — ask Devin to run the same tools:
+    </p>
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-dot red"></span><span class="code-dot yellow"></span><span class="code-dot green"></span>
+        <span>Devin chat</span>
+      </div>
+      <pre><span class="str">"run sleep_status"</span>    <span class="comment"># check progress and staged proposals</span>
+<span class="str">"run sleep_dry_run"</span>   <span class="comment"># preview changes without committing</span>
+<span class="str">"run sleep_run"</span>      <span class="comment"># run full cycle and stage proposal</span>
+<span class="str">"run sleep_adopt"</span>    <span class="comment"># apply the staged proposal</span></pre>
+    </div>
+
+    <div class="callout">
+      <strong>Simultaneous learning:</strong> The same MCP server harvests from both Windsurf and Devin sessions,
+      so your agent learns from your work regardless of which IDE you use each day.
+    </div>
+  </section>
+
   <!-- ── SUMMARY ── -->
   <section>
     <h2><span class="icon">✨</span> Summary</h2>
@@ -902,11 +1224,12 @@
 
     <ul class="checklist" style="margin-top:16px;">
       <li>No weight training, no fine-tuning — pure text optimization of your SKILL.md files</li>
-      <li>Harvests from agentmemory, skills, and Windsurf session logs</li>
+      <li>Harvests from Devin transcripts, agentmemory, skills, and Windsurf session logs</li>
       <li>Validation gate ensures skills only improve, never regress</li>
       <li>You always review the proposal before it goes live</li>
-      <li>Integrated as MCP server — available directly in Windsurf and Devin</li>
-      <li>Published results: +19–25 accuracy points across 6 benchmarks and 7 models</li>
+      <li>Integrated as MCP server — available directly in Windsurf and Devin with auto-registration</li>
+      <li>Dual skill syncing — evolved skills automatically propagate to both IDEs</li>
+      <li>Published results: up to +23.5 average accuracy points on GPT-5.5 (+19 to +25 depending on the execution harness); best or tied on all 52 model × benchmark × harness settings</li>
     </ul>
   </section>
 
