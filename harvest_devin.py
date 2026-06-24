@@ -21,7 +21,7 @@ Output layout (mirrors ~/.claude/projects/<slug>/<sessionId>.jsonl):
     <out_dir>/projects/<slug>/<session_id>.jsonl
 
 Workspace auto-detection order:
-  1. ``SKILLOPT_DEVIN_WORKSPACES`` env var — colon-separated abs paths
+  1. ``MEMENTO_WORKSPACES`` env var — colon-separated abs paths
   2. Devin registry: ``~/.config/Devin/User/workspaceStorage/*/workspace.json``
   4. Working directory fallback
 
@@ -125,7 +125,7 @@ def _workspaces_from_registry(storage_root: str) -> List[tuple]:
 
 def _detect_workspaces() -> List[str]:
     """Return known workspace paths (Devin registry), newest first."""
-    env_val = os.environ.get("SKILLOPT_DEVIN_WORKSPACES", "")
+    env_val = os.environ.get("MEMENTO_WORKSPACES", "")
     if env_val:
         # os.pathsep so Windows 'C:\a;C:\b' splits correctly (not on the drive colon)
         return [p for p in env_val.split(os.pathsep) if p and os.path.isdir(p)]
@@ -471,12 +471,12 @@ def harvest_skills(workspaces: List[str], out_dir: str) -> int:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        description="Generate SkillOpt-Sleep transcripts from Devin local data"
+        description="Generate Memento transcripts from Devin local data"
     )
     parser.add_argument(
         "--out-dir",
-        default=os.path.expanduser("~/.skillopt-sleep-devin"),
-        help="Output claude_home dir (default: ~/.skillopt-sleep-devin)",
+        default=os.path.expanduser("~/.memento"),
+        help="Output claude_home dir (default: ~/.memento)",
     )
     parser.add_argument(
         "--agentmemory",

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test suite for the SkillOpt-Sleep Devin plugin.
+"""Test suite for the Memento Devin plugin.
 
 Stdlib-only (unittest) so it runs anywhere the plugin runs — no pytest needed:
 
@@ -15,7 +15,9 @@ Coverage:
 """
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import sys
@@ -115,7 +117,7 @@ class TestCrossPlatformPaths(unittest.TestCase):
     def test_env_override_splits_on_pathsep(self):
         with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
             joined = os.pathsep.join([a, b])
-            with mock.patch.dict(hw.os.environ, {"SKILLOPT_DEVIN_WORKSPACES": joined}):
+            with mock.patch.dict(hw.os.environ, {"MEMENTO_WORKSPACES": joined}):
                 ws = hw._detect_workspaces()
             self.assertIn(a, ws)
             self.assertIn(b, ws)
@@ -198,12 +200,12 @@ class TestMcpProtocol(unittest.TestCase):
         self.assertEqual(resp["result"]["protocolVersion"], mcp_server.PROTOCOL_VERSION)
         self.assertIn("serverInfo", resp["result"])
 
-    def test_tools_list_has_five_tools(self):
+    def test_tools_list_has_expected_tools(self):
         resp = mcp_server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         tools = resp["result"]["tools"]
         names = {t["name"] for t in tools}
-        self.assertEqual(names, {"sleep_status", "sleep_dry_run", "sleep_run",
-                                 "sleep_adopt", "sleep_harvest"})
+        self.assertEqual(names, {"memento_status", "memento_dry_run", "memento_run",
+                                 "memento_adopt", "memento_harvest", "memento_auto"})
         for t in tools:
             self.assertIn("inputSchema", t)
 
@@ -255,10 +257,78 @@ class TestSkillOptContract(unittest.TestCase):
         self.assertIn("--claude-home", cmd)
 
     def test_all_tool_actions_map_to_engine_subcommands(self):
-        expected = {"sleep_status": "status", "sleep_dry_run": "dry-run",
-                    "sleep_run": "run", "sleep_adopt": "adopt", "sleep_harvest": "harvest"}
+        expected = {"memento_status": "status", "memento_dry_run": "dry-run",
+                    "memento_run": "run", "memento_adopt": "adopt", "memento_harvest": "harvest"}
         for name, action in expected.items():
             self.assertEqual(mcp_server._BY_NAME[name]["action"], action)
+
+    def test_memento_auto_action_is_not_an_engine_subcommand(self):
+        # 'auto' is handled in-process (run→adopt), never shelled out verbatim.
+        self.assertEqual(mcp_server._BY_NAME["memento_auto"]["action"], "auto")
+
+
+class TestSleepAuto(unittest.TestCase):
+    """The fully-automatic run→gate→adopt→report flow (no engine needed)."""
+
+    def _patch(self, engine_calls, before, after, run_out="ok"):
+        actions = []
+
+        def fake_engine(action, args):
+            actions.append(action)
+            engine_calls.append((action, args))
+            return run_out if action == "run" else f"[engine] {action} done"
+
+        skills = iter([before, after])
+        mcp_server._run_engine = fake_engine
+        mcp_server._read_skill = lambda: next(skills)
+        return actions
+
+    def setUp(self):
+        self._orig = (mcp_server._run_engine, mcp_server._read_skill,
+                      mcp_server._run_auto, dict(os.environ))
+
+    def tearDown(self):
+        (mcp_server._run_engine, mcp_server._read_skill,
+         mcp_server._run_auto, _env) = self._orig
+        os.environ.clear()
+        os.environ.update(_env)
+
+    def test_runs_then_adopts_and_reports_diff(self):
+        os.environ.pop("MEMENTO_AUTO_ADOPT_MIN_SCORE", None)
+        calls = []
+        self._patch(calls, before="old line\n", after="new line\n",
+                    run_out="validation score 0.80")
+        out = mcp_server._run_auto({"project": "/p"})
+        self.assertEqual([a for a, _ in calls], ["run", "adopt"])
+        self.assertIn("skill change report", out)
+        self.assertIn("+new line", out)
+        self.assertIn("-old line", out)
+
+    def test_threshold_blocks_adopt_below_floor(self):
+        os.environ["MEMENTO_AUTO_ADOPT_MIN_SCORE"] = "0.9"
+        calls = []
+        self._patch(calls, before="x", after="y", run_out="validation score 0.50")
+        out = mcp_server._run_auto({})
+        self.assertEqual([a for a, _ in calls], ["run"])  # adopt never called
+        self.assertIn("NOT adopted", out)
+
+    def test_no_change_reported_when_skill_unchanged(self):
+        os.environ.pop("MEMENTO_AUTO_ADOPT_MIN_SCORE", None)
+        calls = []
+        self._patch(calls, before="same", after="same", run_out="score 0.99")
+        out = mcp_server._run_auto({})
+        self.assertEqual([a for a, _ in calls], ["run", "adopt"])
+        self.assertIn("no change to SKILL.md", out)
+
+    def test_cli_parses_auto_flags_into_args(self):
+        captured = {}
+        mcp_server._run_auto = lambda args: captured.update(args) or "report"
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = mcp_server.run_auto_cli(
+                ["--auto", "--project", "/p", "--backend", "claude", "--scope", "all"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(captured,
+                         {"project": "/p", "backend": "claude", "scope": "all"})
 
 
 _HAS_ENGINE = importlib.util.find_spec("skillopt_sleep") is not None

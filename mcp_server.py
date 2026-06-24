@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SkillOpt-Sleep — Devin MCP server (stdio, stdlib-only).
+"""Memento — Devin MCP server (stdio, stdlib-only).
 
 Exposes the sleep engine as MCP tools so Devin can drive it.
 Speaks JSON-RPC 2.0 over stdio with just the handful of MCP methods Devin
@@ -10,26 +10,29 @@ locally available Devin data (ATIF-v1.7 transcripts, agentmemory memories,
 and .devin skill files) into the Claude Code-compatible JSONL transcripts
 that the sleep engine consumes.
 
-After ``sleep_adopt`` the evolved SKILL.md is also synced back into the active
+After ``memento_adopt`` the evolved SKILL.md is also synced back into the active
 Devin workspace's ``.devin/skills/`` directory so Devin picks it up immediately.
 
 Tools exposed (identical interface to the Copilot plugin):
-  sleep_status    show how many nights have run + latest staged proposal
-  sleep_dry_run   harvest+mine+replay, report only (no staging)
-  sleep_run       full cycle; stages a reviewed proposal
-  sleep_adopt     apply the latest staged proposal
-  sleep_harvest   debug: list mined recurring tasks
+  memento_status    show how many nights have run + latest staged proposal
+  memento_dry_run   harvest+mine+replay, report only (no staging)
+  memento_run       full cycle; stages a reviewed proposal
+  memento_adopt     apply the latest staged proposal
+  memento_harvest   debug: list mined recurring tasks
+  memento_auto      run + auto-adopt above the gate; report the SKILL.md diff
 
 Configure Devin to launch::
 
     python plugins/devin/mcp_server.py
 
-with ``SKILLOPT_SLEEP_REPO`` set to this repo's root.
+with ``MEMENTO_ENGINE_REPO`` set to this repo's root.
 """
 from __future__ import annotations
 
+import difflib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -37,35 +40,35 @@ import sys
 # ── constants ─────────────────────────────────────────────────────────────────
 
 REPO_ROOT = (
-    os.environ.get("SKILLOPT_SLEEP_REPO")
+    os.environ.get("MEMENTO_ENGINE_REPO")
     or os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 )
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 CLAUDE_HOME = os.environ.get(
-    "SKILLOPT_DEVIN_CLAUDE_HOME",
-    os.path.expanduser("~/.skillopt-sleep-devin"),
+    "MEMENTO_HOME",
+    os.path.expanduser("~/.memento"),
 )
-MANAGED_SKILL_NAME = os.environ.get("SKILLOPT_MANAGED_SKILL", "skillopt-sleep-learned")
+MANAGED_SKILL_NAME = os.environ.get("MEMENTO_MANAGED_SKILL", "memento-learned")
 PROTOCOL_VERSION = "2024-11-05"
 
 TOOLS = [
     {
-        "name": "sleep_status",
+        "name": "memento_status",
         "action": "status",
-        "description": "Show how many SkillOpt-Sleep nights have run and the latest staged proposal.",
+        "description": "Show how many Memento nights have run and the latest staged proposal.",
     },
     {
-        "name": "sleep_dry_run",
+        "name": "memento_dry_run",
         "action": "dry-run",
         "description": "Preview a sleep cycle (harvest+mine+replay) without staging anything.",
     },
     {
-        "name": "sleep_run",
+        "name": "memento_run",
         "action": "run",
         "description": "Run a full sleep cycle; stages a reviewed proposal. Nothing live changes until adopt.",
     },
     {
-        "name": "sleep_adopt",
+        "name": "memento_adopt",
         "action": "adopt",
         "description": (
             "Apply the latest staged proposal to the managed SKILL.md. "
@@ -73,9 +76,19 @@ TOOLS = [
         ),
     },
     {
-        "name": "sleep_harvest",
+        "name": "memento_harvest",
         "action": "harvest",
         "description": "Debug: list the recurring tasks mined from recent Devin sessions.",
+    },
+    {
+        "name": "memento_auto",
+        "action": "auto",
+        "description": (
+            "Fully automatic: run a sleep cycle and immediately adopt the staged "
+            "proposal. Adoption is gated by the engine's held-out validation, plus "
+            "an optional MEMENTO_AUTO_ADOPT_MIN_SCORE floor. Returns a before/after "
+            "diff report of the SKILL.md change so the user can see what changed."
+        ),
     },
 ]
 _BY_NAME = {t["name"]: t for t in TOOLS}
@@ -168,6 +181,87 @@ def _run_engine(action: str, args: dict) -> str:
         result += _sync_skill(project)
     return result
 
+# ── fully automatic: run → gate → adopt → report diff ─────────────────────────
+
+def _managed_skill_path() -> str:
+    return os.path.join(CLAUDE_HOME, "skills", MANAGED_SKILL_NAME, "SKILL.md")
+
+
+def _read_skill() -> str:
+    try:
+        with open(_managed_skill_path(), encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def _extract_score(text: str):
+    """Best-effort parse of a validation score from engine stdout.
+
+    Returns a float in roughly [0, 1] or None. Used only to enforce the optional
+    MEMENTO_AUTO_ADOPT_MIN_SCORE floor; the engine's own held-out gate is the
+    real safety mechanism, so a None here just means "defer to the engine".
+    """
+    matches = re.findall(r"score[^0-9\-]*([0-9]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
+    if not matches:
+        return None
+    try:
+        return float(matches[-1])
+    except ValueError:
+        return None
+
+
+def _skill_diff(before: str, after: str) -> str:
+    if before == after:
+        return ""
+    return "\n".join(difflib.unified_diff(
+        before.splitlines(), after.splitlines(),
+        fromfile="SKILL.md (before)", tofile="SKILL.md (after)", lineterm="",
+    ))
+
+
+def _run_auto(args: dict) -> str:
+    """Run a cycle, adopt the staged proposal if it clears the gate, report the diff.
+
+    Two gates apply, narrowest first:
+      1. the engine only *stages* a proposal when it strictly improves its
+         held-out validation score (upstream behavior, always on);
+      2. an optional MEMENTO_AUTO_ADOPT_MIN_SCORE floor enforced here, applied
+         only when a score is parseable from the run output.
+    """
+    raw_floor = os.environ.get("MEMENTO_AUTO_ADOPT_MIN_SCORE")
+    try:
+        min_score = float(raw_floor) if raw_floor else None
+    except ValueError:
+        min_score = None
+
+    before = _read_skill()
+    run_out = _run_engine("run", args)
+    score = _extract_score(run_out)
+
+    if min_score is not None and score is not None and score < min_score:
+        return (
+            f"{run_out}\n\n[auto] validation score {score:.3f} < threshold "
+            f"{min_score:.3f} — proposal NOT adopted."
+        )
+
+    adopt_out = _run_engine("adopt", args)
+    after = _read_skill()
+    diff = _skill_diff(before, after)
+
+    report = [run_out, "", adopt_out, "", "[auto] === skill change report ==="]
+    if score is not None:
+        line = f"[auto] validation score: {score:.3f}"
+        if min_score is not None:
+            line += f" (threshold {min_score:.3f})"
+        report.append(line)
+    if diff:
+        report.append(f"[auto] SKILL.md updated ({MANAGED_SKILL_NAME}):\n{diff}")
+    else:
+        report.append("[auto] no change to SKILL.md "
+                      "(engine staged nothing, or the proposal was empty).")
+    return "\n".join(report)
+
 # ── JSON-RPC / MCP plumbing ───────────────────────────────────────────────────
 
 def _result(id_, result):
@@ -185,7 +279,7 @@ def handle(req: dict):
         return _result(id_, {
             "protocolVersion": PROTOCOL_VERSION,
             "capabilities": {"tools": {}},
-            "serverInfo": {"name": "skillopt-sleep-devin", "version": "0.1.0"},
+            "serverInfo": {"name": "memento", "version": "0.1.0"},
         })
     if method in ("notifications/initialized", "initialized"):
         return None
@@ -201,14 +295,39 @@ def handle(req: dict):
         tool = _BY_NAME.get(name)
         if not tool:
             return _error(id_, -32602, f"unknown tool: {name}")
-        text = _run_engine(tool["action"], params.get("arguments") or {})
+        tool_args = params.get("arguments") or {}
+        if tool["action"] == "auto":
+            text = _run_auto(tool_args)
+        else:
+            text = _run_engine(tool["action"], tool_args)
         return _result(id_, {"content": [{"type": "text", "text": text}]})
     if method == "ping":
         return _result(id_, {})
     return _error(id_, -32601, f"method not found: {method}")
 
 
+def run_auto_cli(argv) -> int:
+    """Standalone, non-MCP entrypoint for scheduled (launchd/cron) runs.
+
+    Usage: python3 mcp_server.py --auto [--project PATH] [--backend mock|claude|codex]
+                                        [--scope invoked|all]
+    Runs one full auto cycle (run → gate → adopt) and prints the change report.
+    """
+    args = {}
+    it = iter(argv)
+    for tok in it:
+        if tok == "--auto":
+            continue
+        if tok in ("--project", "--backend", "--scope"):
+            args[tok[2:]] = next(it, "")
+    sys.stdout.write(_run_auto(args) + "\n")
+    sys.stdout.flush()
+    return 0
+
+
 def main() -> int:
+    if "--auto" in sys.argv[1:]:
+        return run_auto_cli(sys.argv[1:])
     for line in sys.stdin:
         line = line.strip()
         if not line:

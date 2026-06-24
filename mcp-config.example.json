@@ -1,11 +1,11 @@
 {
   "mcpServers": {
-    "skillopt-sleep": {
+    "memento": {
       "command": "python3",
-      "args": ["/abs/path/to/SkillOPT-devin/mcp_server.py"],
+      "args": ["/abs/path/to/memento/mcp_server.py"],
       "env": {
-        "SKILLOPT_SLEEP_REPO": "/abs/path/to/SkillOpt",
-        "SKILLOPT_DEVIN_CLAUDE_HOME": "~/.skillopt-sleep-devin"
+        "MEMENTO_ENGINE_REPO": "/abs/path/to/SkillOpt",
+        "MEMENTO_HOME": "~/.memento"
       }
     }
   }

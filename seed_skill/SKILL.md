@@ -1,11 +1,11 @@
 ---
-name: skillopt-sleep-learned
-description: Auto-evolved skill — optimised nightly by SkillOpt-Sleep from past Devin sessions. Covers recurring patterns in Java/Spring Boot development, team workflow, Robot Framework tests, and database analysis.
+name: memento-learned
+description: Auto-evolved skill — optimised nightly by Memento from past Devin sessions. Covers recurring patterns in Java/Spring Boot development, team workflow, Robot Framework tests, and database analysis.
 ---
 
-# SkillOpt-Sleep Learned Skill
+# Memento Learned Skill
 
-This skill is automatically updated by SkillOpt-Sleep. The content below is the
+This skill is automatically updated by Memento. The content below is the
 initial seed and will be replaced with validation-gated improvements after the
 first sleep cycle runs.
 
@@ -35,7 +35,7 @@ first sleep cycle runs.
 
 ## Evolution Notes
 
-SkillOpt-Sleep will propose bounded edits (add / delete / replace) to this file based on:
+Memento will propose bounded edits (add / delete / replace) to this file based on:
 - Recurring tasks mined from past Devin sessions
 - Validation-gated replay: only accepted if held-out score improves
-- Review before adoption: run `sleep_adopt` after inspecting the staged proposal
+- Review before adoption: run `memento_adopt` after inspecting the staged proposal

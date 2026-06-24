@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reference judge for SkillOpt-Sleep — score a candidate reply against a rubric.
+"""Reference judge for Memento — score a candidate reply against a rubric.
 
 Tasks harvested without a hard test/build signal get ``verifier: "judge"`` and a
 ``rubric`` (see ``_build_rubric`` in harvest_devin.py).  This module is the
@@ -12,7 +12,7 @@ It is self-contained on purpose — in a full deployment the SkillOpt engine own
 replay+scoring, but having a runnable reference here lets you sanity-check the
 judge path without the engine.
 
-Backends (select via ``SKILLOPT_JUDGE``):
+Backends (select via ``MEMENTO_JUDGE``):
   * ``heuristic`` (default) — keyword-coverage, offline, no API key, deterministic.
   * ``claude``              — LLM judge via the Anthropic API (needs ANTHROPIC_API_KEY).
 
@@ -35,7 +35,7 @@ _STOPWORDS = {"addresses", "resolves", "implements", "without", "introducing",
               "preserves", "improving", "structure", "requested", "satisfies"}
 
 # Cheap, fast model is the right default for a judge.
-_JUDGE_MODEL = os.environ.get("SKILLOPT_JUDGE_MODEL", "claude-haiku-4-5-20251001")
+_JUDGE_MODEL = os.environ.get("MEMENTO_JUDGE_MODEL", "claude-haiku-4-5-20251001")
 
 
 def _content_words(text: str) -> List[str]:
@@ -105,7 +105,7 @@ def claude_score(reply: str, rubric: List[str]) -> float:
 
 
 def score(reply: str, rubric: List[str]) -> float:
-    backend = os.environ.get("SKILLOPT_JUDGE", "heuristic")
+    backend = os.environ.get("MEMENTO_JUDGE", "heuristic")
     return claude_score(reply, rubric) if backend == "claude" else heuristic_score(reply, rubric)
 
 

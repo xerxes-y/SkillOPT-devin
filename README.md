@@ -1,6 +1,6 @@
-# SkillOPT-devin
+# memento
 
-**SkillOpt-Sleep** integration for **Devin** (Cognition).
+**Memento** integration for **Devin** (Cognition).
 
 Gives Devin a nightly *sleep cycle*: reviews past sessions, mines recurring
 patterns, proposes bounded edits to a long-term `SKILL.md`, and gates every
@@ -26,8 +26,8 @@ every locally available source into Claude Code-compatible JSONL transcripts:
 Workspaces are **auto-detected** from the Devin registry (nothing to configure):
 - Devin: `~/.config/Devin/User/workspaceStorage/*/workspace.json`
 
-After `sleep_adopt` the evolved skill is synced to
-`.devin/skills/skillopt-sleep-learned/SKILL.md` automatically.
+After `memento_adopt` the evolved skill is synced to
+`.devin/skills/memento-learned/SKILL.md` automatically.
 
 ---
 
@@ -36,22 +36,22 @@ After `sleep_adopt` the evolved skill is synced to
 **Requirements:** Python ≥ 3.10, Git, Devin CLI.
 
 ```bash
-git clone https://github.com/xerxes-y/SkillOPT-devin.git
-cd SkillOPT-devin
+git clone https://github.com/xerxes-y/memento.git
+cd memento
 bash install.sh
 ```
 
 `install.sh` will:
 1. Use or clone [microsoft/SkillOpt](https://github.com/microsoft/SkillOpt) to `<project-dir>/../SkillOpt` (or `--skillopt-dir`)
 2. Install `skillopt_sleep` (editable) into your Python environment
-3. Create `~/.skillopt-sleep-devin/` (runtime data dir)
-4. Seed `skillopt-sleep-learned/SKILL.md` into every detected Devin workspace (`.devin/skills/`)
-5. Auto-register with **Devin CLI** MCP (`devin mcp add skillopt-sleep`) if the Devin CLI is on PATH
+3. Create `~/.memento/` (runtime data dir)
+4. Seed `memento-learned/SKILL.md` into every detected Devin workspace (`.devin/skills/`)
+5. Auto-register with **Devin CLI** MCP (`devin mcp add memento`) if the Devin CLI is on PATH
 
 ### Devin post-install
 
 MCP registration is automatic if the Devin CLI is installed.
-Optionally copy `devin-rules.snippet.md` to `.devin/rules/skillopt-sleep.md` in your workspace so Devin knows to offer the sleep tools.
+Optionally copy `devin-rules.snippet.md` to `.devin/rules/memento.md` in your workspace so Devin knows to offer the sleep tools.
 
 ### Windows
 
@@ -67,9 +67,9 @@ manually: add the snippet from `mcp-config.example.json` to your Devin MCP confi
 **Devin** — run once in a terminal:
 
 ```bash
-devin mcp add skillopt-sleep \
-  --env "SKILLOPT_SLEEP_REPO=<project-dir>/../SkillOpt" \
-  --env "SKILLOPT_DEVIN_CLAUDE_HOME=$HOME/.skillopt-sleep-devin" \
+devin mcp add memento \
+  --env "MEMENTO_ENGINE_REPO=<project-dir>/../SkillOpt" \
+  --env "MEMENTO_HOME=$HOME/.memento" \
   -- python3 <project-dir>/mcp_server.py
 ```
 
@@ -85,11 +85,12 @@ Or call tools directly:
 
 | Tool | What it does |
 |---|---|
-| `sleep_status` | nights run so far + latest staged proposal |
-| `sleep_dry_run` | preview cycle — no staging, no changes |
-| `sleep_run` | full cycle; stages a proposal for your review |
-| `sleep_adopt` | apply the staged proposal; syncs skill to workspace |
-| `sleep_harvest` | debug: list the recurring tasks mined |
+| `memento_auto` | **fully automatic** — run + auto-adopt above the validation gate, returns the SKILL.md diff report |
+| `memento_status` | nights run so far + latest staged proposal |
+| `memento_dry_run` | preview cycle — no staging, no changes |
+| `memento_run` | full cycle; stages a proposal for your review |
+| `memento_adopt` | apply the staged proposal; syncs skill to workspace |
+| `memento_harvest` | debug: list the recurring tasks mined |
 
 Each tool accepts:
 
@@ -105,14 +106,41 @@ Each tool accepts:
 
 ---
 
+## Run it fully automatically
+
+`memento_auto` runs a cycle **and** adopts the result in one step, gated by the
+engine's held-out validation (plus an optional `MEMENTO_AUTO_ADOPT_MIN_SCORE`
+floor), then returns a before/after `SKILL.md` diff. Ask Devin *"auto-evolve the
+skill"*, or schedule it to run unattended.
+
+**macOS (launchd) — nightly at 02:00:**
+
+```bash
+bash install.sh --schedule                       # uses first detected workspace
+bash install.sh --schedule --schedule-time 03:30 --schedule-project /path/to/repo
+```
+
+This writes `~/Library/LaunchAgents/com.memento.plist` and loads it; logs
+go to `~/.memento/memento-auto.log`. Remove with
+`launchctl unload <plist> && rm <plist>`.
+
+**Linux / cron** — point a cron entry at the standalone runner:
+
+```cron
+0 2 * * *  python3 /path/to/mcp_server.py --auto --project /path/to/repo --backend mock
+```
+
+---
+
 ## Environment variables
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `SKILLOPT_SLEEP_REPO` | `~/.local/share/SkillOpt` | Path to the SkillOpt repo |
-| `SKILLOPT_DEVIN_CLAUDE_HOME` | `~/.skillopt-sleep-devin` | Runtime data dir |
-| `SKILLOPT_DEVIN_WORKSPACES` | auto-detected | Colon-separated workspace paths |
-| `SKILLOPT_MANAGED_SKILL` | `skillopt-sleep-learned` | Skill name to evolve |
+| `MEMENTO_ENGINE_REPO` | `~/.local/share/SkillOpt` | Path to the SkillOpt repo |
+| `MEMENTO_HOME` | `~/.memento` | Runtime data dir |
+| `MEMENTO_WORKSPACES` | auto-detected | Colon-separated workspace paths |
+| `MEMENTO_MANAGED_SKILL` | `memento-learned` | Skill name to evolve |
+| `MEMENTO_AUTO_ADOPT_MIN_SCORE` | unset | Optional floor for `memento_auto`; skip adopt if the parsed validation score is below it (the engine's own gate still applies) |
 
 ---
 
@@ -132,7 +160,7 @@ integration test that runs the real engine is skipped automatically unless
 Or smoke-test the MCP server's JSON-RPC directly:
 
 ```bash
-SKILLOPT_SLEEP_REPO=~/.local/share/SkillOpt \
+MEMENTO_ENGINE_REPO=~/.local/share/SkillOpt \
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
@@ -144,19 +172,19 @@ printf '%s\n' \
 ## Project structure
 
 ```
-SkillOPT-devin/
+memento/
 ├── mcp_server.py              MCP server (stdlib-only, stdio) — Devin
 ├── harvest_devin.py           Transcript generator (Devin ATIF-v1.7 + agentmemory + skills)
 ├── judge.py                   Reference judge — scores a reply against a rubric (validation gate)
 ├── fixtures/
 │   └── devin_sample.json      Sample ATIF transcript for offline testing
 ├── tests/
-│   └── test_skillopt_sleep.py Test suite (harvest, Devin path, judge, MCP, engine contract)
-├── blog-skillopt-sleep.html   Walk-through / use-case blog (PO · QA · Developer)
+│   └── test_memento.py        Test suite (harvest, Devin path, judge, MCP, engine contract)
+├── blog-memento.html   Walk-through / use-case blog (PO · QA · Developer)
 ├── mcp-config.example.json    Devin MCP config snippet
-├── devin-rules.snippet.md     Copy to .devin/rules/skillopt-sleep.md
+├── devin-rules.snippet.md     Copy to .devin/rules/memento.md
 ├── seed_skill/
-│   └── SKILL.md               Initial skill seed (replaced by sleep_adopt)
+│   └── SKILL.md               Initial skill seed (replaced by memento_adopt)
 ├── install.sh                 One-shot installer (Devin auto-detected)
 └── README.md
 ```
@@ -190,7 +218,7 @@ echo "<candidate reply>" | python3 judge.py --rubric-inline '["Addresses OrderSe
 ```
 
 `judge.py` defaults to an offline keyword-coverage heuristic (no API key).
-Set `SKILLOPT_JUDGE=claude` (+ `ANTHROPIC_API_KEY`) for an LLM judge.
+Set `MEMENTO_JUDGE=claude` (+ `ANTHROPIC_API_KEY`) for an LLM judge.
 
 > **Reality check:** the hard-signal path only fires if Devin actually
 > records test or build results in its transcripts.  If it doesn't, every task
@@ -200,8 +228,8 @@ Set `SKILLOPT_JUDGE=claude` (+ `ANTHROPIC_API_KEY`) for an LLM judge.
 Try it on the bundled fixture:
 
 ```bash
-python3 harvest_devin.py --devin-transcripts fixtures --out-dir /tmp/skillopt-test
-cat /tmp/skillopt-test/outcomes.jsonl
+python3 harvest_devin.py --devin-transcripts fixtures --out-dir /tmp/memento-test
+cat /tmp/memento-test/outcomes.jsonl
 ```
 
 ---
