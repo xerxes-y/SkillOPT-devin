@@ -1,4 +1,8 @@
-# memento
+<p align="center">
+  <img src="https://raw.githubusercontent.com/xerxes-y/memento/main/assets/banner.png" alt="memento — a nightly sleep cycle for Devin" width="720">
+</p>
+
+<h1 align="center">memento</h1>
 
 **Memento** integration for **Devin** (Cognition).
 
