@@ -252,6 +252,19 @@ Open the dashboard (ask Devin to run `memory_dashboard`, or standalone):
 python3 mcp_server.py --web --port 3114    # → http://127.0.0.1:3114
 ```
 
+A single-page app served from the stdlib — **overview/health**, a **memory
+browser**, a **force-directed knowledge graph**, **lessons**, sessions, and an
+**activity** log:
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/xerxes-y/memento/main/assets/dashboard/overview.png" width="49%" alt="memento dashboard — overview">
+  <img src="https://raw.githubusercontent.com/xerxes-y/memento/main/assets/dashboard/graph.png" width="49%" alt="memento dashboard — knowledge graph">
+</p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/xerxes-y/memento/main/assets/dashboard/memories.png" width="49%" alt="memento dashboard — memories">
+  <img src="https://raw.githubusercontent.com/xerxes-y/memento/main/assets/dashboard/lessons.png" width="49%" alt="memento dashboard — lessons">
+</p>
+
 > **Scope note.** Embeddings are deterministic term-frequency vectors (real
 > vector-space cosine, no model/API needed) — for synonym-level semantics, swap
 > in a neural embedder via the `Embedder` class. Entity extraction and lesson

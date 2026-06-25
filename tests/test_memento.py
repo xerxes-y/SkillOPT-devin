@@ -383,6 +383,19 @@ class TestMemoryEngine(unittest.TestCase):
         self.store.save("b", "beta", tier="semantic")
         self.assertEqual([m["title"] for m in self.store.list(tier="working")], ["a"])
 
+    def test_sessions_grouping(self):
+        self.store.save("a", "alpha", session="s1")
+        self.store.save("b", "beta", session="s1")
+        self.store.save("c", "gamma", session="s2")
+        by = {r["session"]: r["n"] for r in self.store.sessions()}
+        self.assertEqual(by, {"s1": 2, "s2": 1})
+
+    def test_graph_payload_has_memory_nodes(self):
+        self.store.save("Fix", "patch OrderService.persist()")
+        g = self.store.graph()
+        self.assertTrue(g["entities"] and g["memories"] and g["edges"])
+        self.assertIn("title", g["memories"][0])
+
     def test_secrets_are_redacted(self):
         self.store.save("leak", "token=pypi-AgEIcHlwaS5vcmcABCDEF0123456789xyz")
         m = self.store.list()[0]

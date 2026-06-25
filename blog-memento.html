@@ -1171,6 +1171,48 @@
   </section>
 
 
+  <!-- ── BUILT-IN MEMORY + DASHBOARD ── -->
+  <section>
+    <h2><span class="icon">🗂️</span> Built-in Memory — With a Dashboard</h2>
+
+    <p>
+      Memento now ships its <strong>own</strong> memory engine — no external memory
+      server, no Node. It's <strong>stdlib-only</strong> (SQLite + a tiny web server):
+      hybrid <strong>BM25 + semantic vector</strong> search, four <strong>memory tiers</strong>
+      with auto-consolidation &amp; decay, a <strong>knowledge graph</strong>,
+      auto-derived <strong>lessons</strong>, namespaces, an audit log, and snapshots —
+      all browsable in a local <strong>web dashboard</strong>.
+    </p>
+
+    <img src="assets/dashboard/overview.png" alt="Dashboard — overview" style="width:100%;border:1px solid var(--border);border-radius:var(--radius);margin:12px 0;" />
+
+    <div class="two-col">
+      <img src="assets/dashboard/graph.png" alt="Dashboard — knowledge graph" style="width:100%;border:1px solid var(--border);border-radius:var(--radius);" />
+      <img src="assets/dashboard/lessons.png" alt="Dashboard — lessons" style="width:100%;border:1px solid var(--border);border-radius:var(--radius);" />
+    </div>
+
+    <ul class="checklist" style="margin-top:18px;">
+      <li><strong>Hybrid retrieval</strong> — BM25 full-text fused with semantic vector similarity (Reciprocal Rank Fusion)</li>
+      <li><strong>Tiers + lifecycle</strong> — working → episodic → semantic → procedural, with auto-consolidation, decay, and pinning</li>
+      <li><strong>Knowledge graph</strong> — entities extracted from memories, with a draggable force-directed view</li>
+      <li><strong>Lessons</strong> — recurring entities, tags, and failures are distilled into semantic-tier lessons</li>
+      <li><strong>Governance</strong> — namespaces, audit log, and git-versionable snapshot / restore</li>
+      <li><strong>Secret redaction</strong> before storage; agentmemory-compatible export so the sleep cycle harvests it automatically</li>
+    </ul>
+
+    <div class="code-block">
+      <div class="code-header"><span class="code-dot red"></span><span class="code-dot yellow"></span><span class="code-dot green"></span><span>Open the dashboard</span></div>
+      <pre><span class="cmd">python3 mcp_server.py --web --port 3114</span>   <span class="comment"># → http://127.0.0.1:3114</span></pre>
+    </div>
+
+    <div class="callout">
+      <strong>Honest scope:</strong> embeddings are deterministic term-frequency vectors
+      (real vector cosine, no model needed) — swap in a neural embedder for synonym-level
+      semantics. This is agentmemory-<em>class</em> core coverage (~18 memory tools), not a
+      byte-for-byte clone of its 53-tool surface.
+    </div>
+  </section>
+
   <!-- ── SUMMARY ── -->
   <section>
     <h2><span class="icon">✨</span> Summary</h2>
