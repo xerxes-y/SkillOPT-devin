@@ -1,8 +1,8 @@
 # Cognition outreach — memento (Devin MCP)
 
 > Send via cognition.com contact/partnerships, Devin in-app support, or @cognition on X.
-> Keep it short; partnerships teams skim. Name/role filled in — drop the DEGIRO
-> mention if you'd rather not associate your employer; add usage numbers if you have any.
+> Keep it short; partnerships teams skim. Positioned as a personal / community
+> tool (no employer named, no adoption commitment); add usage numbers if you have any.
 
 ---
 
@@ -10,9 +10,8 @@
 
 Hi Cognition team,
 
-I'm a software engineer at DEGIRO, where our team uses Devin day to day. As a
-personal open-source project, I built **memento**, an MCP server for Devin that
-gives it a nightly **self-improvement loop**: it harvests a team's Devin sessions, mines recurring
+I use Devin daily, and as a personal open-source project I built **memento**, an
+MCP server for Devin that gives it a nightly **self-improvement loop**: it harvests a team's Devin sessions, mines recurring
 tasks, proposes bounded edits to a long-term `SKILL.md`, and only adopts a change
 when it **strictly beats a held-out validation gate** (built on Microsoft's
 SkillOpt). It also ships a built-in memory engine — hybrid BM25 + vector search,
@@ -44,4 +43,4 @@ Could we find 15 minutes? I can walk through a live demo.
 
 Thanks,
 Khashayar Yadmand
-Software Engineer, DEGIRO (Devin user) · github.com/xerxes-y · personal project
+github.com/xerxes-y · a personal open-source project
