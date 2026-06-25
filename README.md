@@ -27,10 +27,12 @@ every locally available source into Claude Code-compatible JSONL transcripts:
 | **Memories** | `~/.agentmemory/standalone.json` | Memories saved via memento's built-in `memory_save` tool (or the [agentmemory MCP server](https://github.com/rohitg00/agentmemory) if you run it) |
 | **Skill files** | `.devin/skills/*/SKILL.md` | Skill trigger patterns and expected behavior |
 
-Memory is **built in** — `memory_save`/`memory_recall` write the same
-`standalone.json` the harvester reads, so no separate memory MCP is required (it
-stays compatible with [agentmemory](https://github.com/rohitg00/agentmemory) if
-you already use it).
+Memory is **built in** ([`memento_memory.py`](memento_memory.py)): a SQLite store
+with BM25 search, tiers, secret redaction, and a local web dashboard — no
+separate memory MCP required. It mirrors to the `standalone.json` the harvester
+reads (and stays compatible with [agentmemory](https://github.com/rohitg00/agentmemory)
+if you already use it). See [Built-in memory](#built-in-memory).
+
 Workspaces are **auto-detected** from the Devin registry (nothing to configure):
 - Devin: `~/.config/Devin/User/workspaceStorage/*/workspace.json`
 
@@ -160,10 +162,15 @@ Or call tools directly:
 | `memento_run` | full cycle; stages a proposal for your review |
 | `memento_adopt` | apply the staged proposal; syncs skill to workspace |
 | `memento_harvest` | debug: list the recurring tasks mined |
-| `memory_save` | persist a memory (`title` + `content`) to the built-in store |
-| `memory_recall` | list/search saved memories (optional `query`, `limit`) |
+| `memory_save` | persist a memory (`title`, `content`, `tier`, `tags`) to the built-in store |
+| `memory_recall` | BM25 relevance search over memories (optional `tier`) |
+| `memory_list` | list recent memories (optional `tier` / `session`) |
+| `memory_forget` | delete a memory by `id` or by `query` |
+| `memory_sessions` | sessions with memory counts |
+| `memory_stats` | totals, per-tier counts, search backend |
+| `memory_dashboard` | start the local web dashboard; returns its URL |
 
-Each tool accepts:
+The sleep-cycle tools (`memento_*`) accept:
 
 | Argument | Values | Default |
 |---|---|---|
@@ -203,6 +210,34 @@ go to `~/.memento/memento-auto.log`. Remove with
 
 ---
 
+## Built-in memory
+
+memento ships its **own** memory engine ([`memento_memory.py`](memento_memory.py)) —
+no external memory MCP, no Node. It is **stdlib-only** (SQLite + `http.server`):
+
+- **SQLite store** with **BM25 full-text search** (FTS5; falls back to `LIKE` if
+  your SQLite lacks FTS5).
+- **Memory tiers** — `working` / `episodic` / `semantic` / `procedural`.
+- **Secret redaction** — API keys/tokens are stripped before anything is stored.
+- **Local web dashboard** — browse / search / add / forget memories in the
+  browser.
+- **agentmemory-compatible export** — mirrors to `standalone.json`, so the sleep
+  cycle harvests saved memories automatically (and it interoperates with
+  [agentmemory](https://github.com/rohitg00/agentmemory) if you also run it).
+
+Open the dashboard (ask Devin to run `memory_dashboard`, or standalone):
+
+```bash
+python3 mcp_server.py --web --port 3114    # → http://127.0.0.1:3114
+```
+
+> **Roadmap.** This is Phase 1 (foundation). Planned, layering on the same
+> schema: vector/semantic search + RRF fusion, a knowledge graph + graph view,
+> 4-tier auto-consolidation & decay, capture hooks, and governance/snapshots —
+> toward agentmemory-class coverage, all owned by this project.
+
+---
+
 ## Environment variables
 
 | Variable | Default | Purpose |
@@ -211,7 +246,9 @@ go to `~/.memento/memento-auto.log`. Remove with
 | `MEMENTO_HOME` | `~/.memento` | Runtime data dir |
 | `MEMENTO_WORKSPACES` | auto-detected | Colon-separated workspace paths |
 | `MEMENTO_MANAGED_SKILL` | `memento-learned` | Skill name to evolve |
-| `MEMENTO_MEMORY_PATH` | `~/.agentmemory/standalone.json` | Where `memory_save`/`memory_recall` store memories |
+| `MEMENTO_MEMORY_DB` | `~/.memento/memory.db` | SQLite memory store |
+| `MEMENTO_MEMORY_PATH` | `~/.agentmemory/standalone.json` | agentmemory-compatible export the harvester reads |
+| `MEMENTO_DASHBOARD_PORT` | `3114` | Local memory dashboard port |
 | `MEMENTO_AUTO_ADOPT_MIN_SCORE` | unset | Optional floor for `memento_auto`; skip adopt if the parsed validation score is below it (the engine's own gate still applies) |
 
 ---
@@ -247,6 +284,7 @@ printf '%s\n' \
 memento/
 ├── mcp_server.py              MCP server (stdlib-only, stdio) — Devin
 ├── harvest_devin.py           Transcript generator (Devin ATIF-v1.7 + agentmemory + skills)
+├── memento_memory.py          Built-in memory engine (SQLite + BM25 + tiers + web dashboard)
 ├── judge.py                   Reference judge — scores a reply against a rubric (validation gate)
 ├── fixtures/
 │   └── devin_sample.json      Sample ATIF transcript for offline testing

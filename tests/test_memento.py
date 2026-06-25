@@ -22,6 +22,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import types
 import unittest
 from unittest import mock
@@ -34,6 +35,7 @@ if PLUGIN_DIR not in sys.path:
 import harvest_devin as hw  # noqa: E402
 import judge                    # noqa: E402
 import mcp_server               # noqa: E402
+import memento_memory           # noqa: E402
 
 FIXTURES = os.path.join(PLUGIN_DIR, "fixtures")
 
@@ -206,7 +208,9 @@ class TestMcpProtocol(unittest.TestCase):
         names = {t["name"] for t in tools}
         self.assertEqual(names, {"memento_status", "memento_dry_run", "memento_run",
                                  "memento_adopt", "memento_harvest", "memento_auto",
-                                 "memory_save", "memory_recall"})
+                                 "memory_save", "memory_recall", "memory_list",
+                                 "memory_forget", "memory_sessions", "memory_stats",
+                                 "memory_dashboard"})
         for t in tools:
             self.assertIn("inputSchema", t)
         # memory_save advertises its own schema, not the shared engine schema
@@ -335,51 +339,103 @@ class TestSleepAuto(unittest.TestCase):
                          {"project": "/p", "backend": "claude", "scope": "all"})
 
 
-class TestMemoryStore(unittest.TestCase):
-    """Native memory tools write the agentmemory-compatible standalone.json."""
+class TestMemoryEngine(unittest.TestCase):
+    """memento_memory: SQLite store, BM25 search, tiers, redaction, export."""
 
     def setUp(self):
-        self._orig_path = mcp_server.MEMORY_PATH
         self._dir = tempfile.mkdtemp()
-        mcp_server.MEMORY_PATH = os.path.join(self._dir, "standalone.json")
+        self.export = os.path.join(self._dir, "standalone.json")
+        self.store = memento_memory.MemoryStore(
+            db_path=os.path.join(self._dir, "memory.db"), export_path=self.export)
 
-    def tearDown(self):
-        mcp_server.MEMORY_PATH = self._orig_path
-
-    def test_save_writes_harvester_compatible_format(self):
-        out = mcp_server._save_memory("Use rtk for builds", "Run `rtk mvn test`.")
-        self.assertIn("saved", out)
-        mems = _read_json(mcp_server.MEMORY_PATH)["mem:memories"]
+    def test_save_and_export_is_harvester_compatible(self):
+        self.store.save("Use rtk for builds", "Run rtk mvn test.", tier="procedural")
+        mems = _read_json(self.export)["mem:memories"]
         self.assertEqual(len(mems), 1)
-        mem = next(iter(mems.values()))
-        self.assertEqual(mem["title"], "Use rtk for builds")
-        self.assertIn("rtk", mem["content"])
-        # the harvester reads exactly this shape
-        n = hw.harvest_agentmemory(mcp_server.MEMORY_PATH, self._dir, ["/tmp/p"])
+        self.assertEqual(next(iter(mems.values()))["title"], "Use rtk for builds")
+        # the existing harvester reads exactly this shape
+        n = hw.harvest_agentmemory(self.export, self._dir, ["/tmp/p"])
         self.assertEqual(n, 1)
 
     def test_save_requires_both_fields(self):
-        out = mcp_server._save_memory("", "content only")
-        self.assertIn("error", out)
-        self.assertFalse(os.path.exists(mcp_server.MEMORY_PATH))
+        with self.assertRaises(ValueError):
+            self.store.save("", "content only")
 
-    def test_save_is_idempotent_on_identical_content(self):
-        mcp_server._save_memory("t", "c")
-        mcp_server._save_memory("t", "c")
-        mems = _read_json(mcp_server.MEMORY_PATH)["mem:memories"]
-        self.assertEqual(len(mems), 1)
+    def test_idempotent_on_identical_content(self):
+        self.store.save("t", "c")
+        self.store.save("t", "c")
+        self.assertEqual(self.store.stats()["total"], 1)
 
-    def test_recall_filters_by_query(self):
-        mcp_server._save_memory("Build tip", "use rtk mvn test")
-        mcp_server._save_memory("Style", "prefer black formatting")
-        self.assertIn("Build tip", mcp_server._recall_memories("rtk", None))
-        self.assertNotIn("Style", mcp_server._recall_memories("rtk", None))
-        self.assertEqual(mcp_server._recall_memories("nomatch", None),
-                         "[memory] no memories found.")
+    def test_search_ranks_by_relevance(self):
+        self.store.save("Build tip", "use rtk mvn test for the order service")
+        self.store.save("Style", "prefer black formatting in python")
+        hits = self.store.search("rtk")
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(hits[0]["title"], "Build tip")
+        self.assertEqual(self.store.search("nomatch"), [])
 
-    def test_recall_on_empty_store(self):
-        self.assertEqual(mcp_server._recall_memories(None, None),
-                         "[memory] no memories found.")
+    def test_tier_filter(self):
+        self.store.save("a", "alpha", tier="working")
+        self.store.save("b", "beta", tier="semantic")
+        self.assertEqual([m["title"] for m in self.store.list(tier="working")], ["a"])
+
+    def test_secrets_are_redacted(self):
+        self.store.save("leak", "token=pypi-AgEIcHlwaS5vcmcABCDEF0123456789xyz")
+        m = self.store.list()[0]
+        self.assertNotIn("pypi-AgEIc", m["content"])
+        self.assertIn("[REDACTED]", m["content"])
+
+    def test_forget_by_id_and_query(self):
+        mid = self.store.save("temp", "delete me by id")
+        self.store.save("keep", "keep this around")
+        self.assertEqual(self.store.forget(mem_id=mid), 1)
+        self.assertEqual(self.store.forget(query="keep this"), 1)
+        self.assertEqual(self.store.stats()["total"], 0)
+
+    def test_dashboard_api_roundtrip(self):
+        import json as _json
+        from urllib.request import urlopen, Request
+        srv = memento_memory.make_server(self.store, port=0)
+        try:
+            port = srv.server_address[1]
+            t = threading.Thread(target=srv.handle_request)  # serve one POST
+            t.start()
+            body = _json.dumps({"title": "via web",
+                                "content": "added through dashboard"}).encode()
+            # reading the response guarantees the save handler finished
+            urlopen(Request(f"http://127.0.0.1:{port}/api/memories", data=body,
+                            headers={"content-type": "application/json"})).read()
+            t.join(timeout=5)
+            self.assertEqual(self.store.stats()["total"], 1)
+        finally:
+            srv.server_close()
+
+
+class TestMemoryTools(unittest.TestCase):
+    """The MCP-facing memory_* handlers in mcp_server."""
+
+    def setUp(self):
+        self._orig = mcp_server._MEMORY_STORE
+        self._dir = tempfile.mkdtemp()
+        mcp_server._MEMORY_STORE = memento_memory.MemoryStore(
+            db_path=os.path.join(self._dir, "memory.db"),
+            export_path=os.path.join(self._dir, "standalone.json"))
+
+    def tearDown(self):
+        mcp_server._MEMORY_STORE = self._orig
+
+    def test_save_then_recall_via_handlers(self):
+        out = mcp_server._memory_save({"title": "Build", "content": "use rtk mvn test",
+                                       "tier": "procedural", "tags": "build,java"})
+        self.assertIn("saved", out)
+        self.assertIn("procedural", out)
+        recall = mcp_server._memory_recall({"query": "rtk"})
+        self.assertIn("Build", recall)
+        self.assertIn("procedural", recall)
+
+    def test_stats_handler(self):
+        mcp_server._memory_save({"title": "a", "content": "alpha"})
+        self.assertIn("1 total", mcp_server._memory_stats({}))
 
 
 _HAS_ENGINE = importlib.util.find_spec("skillopt_sleep") is not None

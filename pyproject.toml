@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "devin-memento"
-version = "0.1.1"
+version = "0.2.0"
 description = "Memento — a Devin MCP server that gives Devin a nightly sleep cycle to self-improve its SKILL.md."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -34,4 +34,4 @@ Repository = "https://github.com/xerxes-y/memento"
 [tool.setuptools]
 # Flat layout: ship the three top-level modules. The MCP server shells out to
 # harvest_devin.py as a sibling file, so all three must land together.
-py-modules = ["mcp_server", "harvest_devin", "judge"]
+py-modules = ["mcp_server", "harvest_devin", "judge", "memento_memory"]

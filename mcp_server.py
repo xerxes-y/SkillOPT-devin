@@ -20,8 +20,17 @@ Tools exposed (identical interface to the Copilot plugin):
   memento_adopt     apply the latest staged proposal
   memento_harvest   debug: list mined recurring tasks
   memento_auto      run + auto-adopt above the gate; report the SKILL.md diff
-  memory_save       persist a memory (title+content) to the built-in store
-  memory_recall     list/search saved memories
+  memory_save       persist a memory (tier/tags) to the built-in SQLite store
+  memory_recall     BM25 search over saved memories
+  memory_list       list recent memories (tier/session filter)
+  memory_forget     delete a memory by id or query
+  memory_sessions   list sessions with memory counts
+  memory_stats      store totals + search backend
+  memory_dashboard  start the local web dashboard; return its URL
+
+Run just the memory dashboard with::
+
+    python mcp_server.py --web [--port 3114]
 
 Configure Devin to launch::
 
@@ -32,7 +41,6 @@ with ``MEMENTO_ENGINE_REPO`` set to this repo's root.
 from __future__ import annotations
 
 import difflib
-import hashlib
 import json
 import os
 import re
@@ -52,12 +60,14 @@ CLAUDE_HOME = os.environ.get(
     os.path.expanduser("~/.memento"),
 )
 MANAGED_SKILL_NAME = os.environ.get("MEMENTO_MANAGED_SKILL", "memento-learned")
-# Native memory store. Defaults to the agentmemory-compatible path the harvester
-# already reads, so saved memories feed the next sleep cycle with no extra wiring.
+# Memory engine lives in memento_memory (SQLite). This path is the
+# agentmemory-compatible JSON the engine mirrors to, so the harvester picks up
+# saved memories on the next sleep cycle with no extra wiring.
 MEMORY_PATH = os.environ.get(
     "MEMENTO_MEMORY_PATH",
     os.path.expanduser("~/.agentmemory/standalone.json"),
 )
+_MEM_TIERS = ("working", "episodic", "semantic", "procedural")
 PROTOCOL_VERSION = "2024-11-05"
 
 TOOLS = [
@@ -103,15 +113,19 @@ TOOLS = [
         "name": "memory_save",
         "action": "memory_save",
         "description": (
-            "Persist a memory (title + content) to memento's built-in store. "
-            "Saved memories feed the next sleep cycle automatically — no external "
-            "MCP needed."
+            "Persist a memory to memento's built-in store (SQLite). Secrets are "
+            "redacted; memories feed the next sleep cycle automatically — no "
+            "external memory MCP needed."
         ),
         "schema": {
             "type": "object",
             "properties": {
                 "title": {"type": "string", "description": "Short label for the memory."},
                 "content": {"type": "string", "description": "The memory text to persist."},
+                "tier": {"type": "string", "enum": list(_MEM_TIERS),
+                         "description": "Memory tier (default episodic)."},
+                "tags": {"type": "string", "description": "Comma-separated tags (optional)."},
+                "session": {"type": "string", "description": "Session label (optional)."},
             },
             "required": ["title", "content"],
             "additionalProperties": False,
@@ -120,13 +134,63 @@ TOOLS = [
     {
         "name": "memory_recall",
         "action": "memory_recall",
-        "description": "List or search saved memories (optionally filtered by a query substring).",
+        "description": "Search saved memories by relevance (BM25 full-text); optional tier filter.",
         "schema": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "Substring filter over title/content (optional)."},
+                "query": {"type": "string", "description": "Search text (empty = most recent)."},
                 "limit": {"type": "integer", "description": "Max results (default 10)."},
+                "tier": {"type": "string", "enum": list(_MEM_TIERS)},
             },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "memory_list",
+        "action": "memory_list",
+        "description": "List recent memories (optional tier / session filter).",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "description": "Max results (default 20)."},
+                "tier": {"type": "string", "enum": list(_MEM_TIERS)},
+                "session": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "memory_forget",
+        "action": "memory_forget",
+        "description": "Delete a memory by id, or all memories matching a query.",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string", "description": "Memory id to delete."},
+                "query": {"type": "string", "description": "Delete all matches of this query."},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "memory_sessions",
+        "action": "memory_sessions",
+        "description": "List sessions that have saved memories, with counts.",
+        "schema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+    {
+        "name": "memory_stats",
+        "action": "memory_stats",
+        "description": "Memory store stats: totals, per-tier counts, search backend.",
+        "schema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+    {
+        "name": "memory_dashboard",
+        "action": "memory_dashboard",
+        "description": "Start the local web dashboard to browse/search/add memories; returns its URL.",
+        "schema": {
+            "type": "object",
+            "properties": {"port": {"type": "integer", "description": "Port (default 3114)."}},
             "additionalProperties": False,
         },
     },
@@ -302,55 +366,85 @@ def _run_auto(args: dict) -> str:
                       "(engine staged nothing, or the proposal was empty).")
     return "\n".join(report)
 
-# ── native memory store (agentmemory-compatible standalone.json) ──────────────
+# ── memory engine (memento_memory: SQLite + BM25 + tiers + dashboard) ─────────
 
-def _load_memories() -> dict:
-    try:
-        with open(MEMORY_PATH, encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, ValueError):
-        data = {}
-    if not isinstance(data.get("mem:memories"), dict):
-        data["mem:memories"] = {}
-    return data
+_MEMORY_STORE = None
 
 
-def _save_memory(title: str, content: str) -> str:
-    title = (title or "").strip()
-    content = (content or "").strip()
-    if not title or not content:
-        return "[memory] error: both 'title' and 'content' are required."
-    data = _load_memories()
-    mems = data["mem:memories"]
-    mem_id = "mem-" + hashlib.sha1(
-        (title + "\x00" + content).encode("utf-8")).hexdigest()[:12]
-    mems[mem_id] = {"title": title, "content": content}
-    os.makedirs(os.path.dirname(MEMORY_PATH) or ".", exist_ok=True)
-    tmp = MEMORY_PATH + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-    os.replace(tmp, MEMORY_PATH)
-    return (f"[memory] saved ({mem_id}): {title}\n"
-            f"[memory] {len(mems)} total → {MEMORY_PATH}")
+def _store():
+    """Lazily build (and cache) the memento-owned memory engine."""
+    global _MEMORY_STORE
+    if _MEMORY_STORE is None:
+        import memento_memory
+        _MEMORY_STORE = memento_memory.MemoryStore(export_path=MEMORY_PATH)
+    return _MEMORY_STORE
 
 
-def _recall_memories(query, limit) -> str:
-    items = list(_load_memories()["mem:memories"].items())
-    q = str(query or "").strip().lower()
-    if q:
-        items = [(i, m) for i, m in items
-                 if q in str(m.get("title", "")).lower()
-                 or q in str(m.get("content", "")).lower()]
-    try:
-        n = int(limit) if limit else 10
-    except (ValueError, TypeError):
-        n = 10
-    items = items[:max(0, n)]
-    if not items:
+def _fmt(rows: list) -> str:
+    if not rows:
         return "[memory] no memories found."
-    lines = [f"- {m.get('title', '')}: {str(m.get('content', '')).strip()[:200]}"
-             for _, m in items]
-    return f"[memory] {len(items)} memory(ies):\n" + "\n".join(lines)
+    lines = [f"- ({m['tier']}) {m['title']}: {str(m['content']).strip()[:200]}"
+             + (f"  #{m['tags']}" if m.get("tags") else "")
+             for m in rows]
+    return f"[memory] {len(rows)} memory(ies):\n" + "\n".join(lines)
+
+
+def _memory_save(args: dict) -> str:
+    try:
+        mid = _store().save(args.get("title"), args.get("content"),
+                            tier=args.get("tier"), tags=args.get("tags"),
+                            session=args.get("session", ""))
+    except ValueError as exc:
+        return f"[memory] error: {exc}"
+    return f"[memory] saved ({mid}) in tier '{args.get('tier') or 'episodic'}': {args.get('title')}"
+
+
+def _memory_recall(args: dict) -> str:
+    return _fmt(_store().search(args.get("query"), limit=args.get("limit") or 10,
+                                tier=args.get("tier")))
+
+
+def _memory_list(args: dict) -> str:
+    return _fmt(_store().list(limit=args.get("limit") or 20, tier=args.get("tier"),
+                              session=args.get("session")))
+
+
+def _memory_forget(args: dict) -> str:
+    n = _store().forget(mem_id=args.get("id"), query=args.get("query"))
+    return f"[memory] forgot {n} memory(ies)."
+
+
+def _memory_sessions(_args: dict) -> str:
+    rows = _store().sessions()
+    if not rows:
+        return "[memory] no sessions recorded."
+    return "[memory] sessions:\n" + "\n".join(
+        f"- {r['session']}: {r['n']} memories" for r in rows)
+
+
+def _memory_stats(_args: dict) -> str:
+    s = _store().stats()
+    tiers = ", ".join(f"{k}={v}" for k, v in s["by_tier"].items()) or "none"
+    return (f"[memory] {s['total']} total ({tiers}); "
+            f"bm25={'on' if s['fts'] else 'off (LIKE fallback)'}; db={s['db']}")
+
+
+def _memory_dashboard(args: dict) -> str:
+    import memento_memory
+    port = int(args.get("port") or memento_memory.DEFAULT_PORT)
+    url = memento_memory.start_dashboard(_store(), port=port)
+    return f"[memory] dashboard running at {url}"
+
+
+_MEMORY_ACTIONS = {
+    "memory_save": _memory_save,
+    "memory_recall": _memory_recall,
+    "memory_list": _memory_list,
+    "memory_forget": _memory_forget,
+    "memory_sessions": _memory_sessions,
+    "memory_stats": _memory_stats,
+    "memory_dashboard": _memory_dashboard,
+}
 
 # ── JSON-RPC / MCP plumbing ───────────────────────────────────────────────────
 
@@ -387,12 +481,11 @@ def handle(req: dict):
             return _error(id_, -32602, f"unknown tool: {name}")
         tool_args = params.get("arguments") or {}
         action = tool["action"]
+        handler = _MEMORY_ACTIONS.get(action)
         if action == "auto":
             text = _run_auto(tool_args)
-        elif action == "memory_save":
-            text = _save_memory(tool_args.get("title"), tool_args.get("content"))
-        elif action == "memory_recall":
-            text = _recall_memories(tool_args.get("query"), tool_args.get("limit"))
+        elif handler:
+            text = handler(tool_args)
         else:
             text = _run_engine(action, tool_args)
         return _result(id_, {"content": [{"type": "text", "text": text}]})
@@ -420,9 +513,26 @@ def run_auto_cli(argv) -> int:
     return 0
 
 
+def run_web_cli(argv) -> int:
+    """Standalone entrypoint: serve only the memory dashboard (blocking)."""
+    import memento_memory
+    port = memento_memory.DEFAULT_PORT
+    it = iter(argv)
+    for tok in it:
+        if tok == "--port":
+            port = int(next(it, port))
+    try:
+        memento_memory.serve_forever(port=port)
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
 def main() -> int:
     if "--auto" in sys.argv[1:]:
         return run_auto_cli(sys.argv[1:])
+    if "--web" in sys.argv[1:]:
+        return run_web_cli(sys.argv[1:])
     for line in sys.stdin:
         line = line.strip()
         if not line:
