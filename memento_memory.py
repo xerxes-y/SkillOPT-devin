@@ -601,6 +601,18 @@ class MemoryStore:
             pass
 
 
+# ── backend factory ───────────────────────────────────────────────────────────
+
+def open_store(export_path=None, db_path=None):
+    """Open the memory store. Shared **Postgres** when ``MEMENTO_DB_URL`` is a
+    postgres DSN (team mode), else the local **SQLite** store."""
+    dsn = os.environ.get("MEMENTO_DB_URL", "")
+    if dsn.startswith(("postgres://", "postgresql://")):
+        import memento_memory_pg
+        return memento_memory_pg.MemoryStorePG(dsn)
+    return MemoryStore(db_path=db_path, export_path=export_path)
+
+
 # ── local web dashboard (stdlib http.server, vanilla JS) ──────────────────────
 
 _PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
@@ -890,7 +902,7 @@ def start_dashboard(store, host="127.0.0.1", port=DEFAULT_PORT) -> str:
 
 
 def serve_forever(host="127.0.0.1", port=DEFAULT_PORT):
-    store = MemoryStore()
+    store = open_store()
     srv = make_server(store, host, port)
     print(f"[memento] memory dashboard → http://{host}:{srv.server_address[1]}")
     srv.serve_forever()

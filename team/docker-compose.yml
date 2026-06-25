@@ -1,0 +1,27 @@
+# Shared per-team memory for memento — one Postgres (with pgvector) per team.
+#
+#   docker compose -f team/docker-compose.yml up -d
+#
+# Then point each team member's memento at it:
+#   MEMENTO_DB_URL=postgresql://memento:memento@<host>:5432/memento
+# Scope per team via the `namespace` argument on memory_save / memory_recall.
+services:
+  memento-db:
+    image: pgvector/pgvector:pg16
+    container_name: memento-db
+    environment:
+      POSTGRES_USER: memento
+      POSTGRES_PASSWORD: memento
+      POSTGRES_DB: memento
+    ports:
+      - "5432:5432"
+    volumes:
+      - memento_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U memento"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  memento_pgdata:

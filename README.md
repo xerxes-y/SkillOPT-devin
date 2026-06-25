@@ -291,6 +291,31 @@ browser**, a **force-directed knowledge graph**, **lessons**, sessions, and an
 > derivation are heuristic (LLM-swappable). This is agentmemory-*class* core
 > coverage (~18 memory tools), not a byte-for-byte clone of its 53-tool surface.
 
+### Team memory (shared Postgres)
+
+By default memory is **local** (SQLite, per machine). To **share it across a
+team**, point everyone's memento at one **PostgreSQL** database — concurrent
+multi-writer, full-text + vector search, scoped per team by `namespace`. Don't
+put the SQLite file on a network drive; SQLite isn't safe for concurrent remote
+writers.
+
+```bash
+# 1. one shared Postgres (pgvector) per team
+docker compose -f team/docker-compose.yml up -d
+
+# 2. each member installs the backend + points memento at the DB
+pip install "devin-memento[postgres]"
+export MEMENTO_DB_URL=postgresql://memento:memento@<host>:5432/memento
+```
+
+When `MEMENTO_DB_URL` is a postgres DSN, the engine transparently uses the
+[`memento_memory_pg`](memento_memory_pg.py) backend instead of SQLite — same MCP
+tools, same dashboard (`mcp_server.py --web` then serves the **team's** memory).
+Use the `namespace` argument on `memory_save`/`memory_recall` as the team/scope
+boundary. **pgvector** ANN activates automatically once a dense embedder is
+configured; otherwise vector search uses the built-in lexical cosine (works on
+plain Postgres). Validate with `MEMENTO_TEST_PG_DSN=… python3 -m unittest discover -s tests`.
+
 ---
 
 ## Environment variables
@@ -301,7 +326,8 @@ browser**, a **force-directed knowledge graph**, **lessons**, sessions, and an
 | `MEMENTO_HOME` | `~/.memento` | Runtime data dir |
 | `MEMENTO_WORKSPACES` | auto-detected | Colon-separated workspace paths |
 | `MEMENTO_MANAGED_SKILL` | `memento-learned` | Skill name to evolve |
-| `MEMENTO_MEMORY_DB` | `~/.memento/memory.db` | SQLite memory store |
+| `MEMENTO_DB_URL` | unset | Postgres DSN → **shared team memory** (else local SQLite) |
+| `MEMENTO_MEMORY_DB` | `~/.memento/memory.db` | SQLite memory store (when no `MEMENTO_DB_URL`) |
 | `MEMENTO_MEMORY_PATH` | `~/.agentmemory/standalone.json` | agentmemory-compatible export the harvester reads |
 | `MEMENTO_DASHBOARD_PORT` | `3114` | Local memory dashboard port |
 | `MEMENTO_AUTO_ADOPT_MIN_SCORE` | unset | Optional floor for `memento_auto`; skip adopt if the parsed validation score is below it (the engine's own gate still applies) |
@@ -340,6 +366,8 @@ memento/
 ├── mcp_server.py              MCP server (stdlib-only, stdio) — Devin
 ├── harvest_devin.py           Transcript generator (Devin ATIF-v1.7 + agentmemory + skills)
 ├── memento_memory.py          Built-in memory engine (SQLite + BM25 + tiers + web dashboard)
+├── memento_memory_pg.py       Shared per-team backend (PostgreSQL + pgvector)
+├── team/                       docker-compose for a per-team Postgres
 ├── judge.py                   Reference judge — scores a reply against a rubric (validation gate)
 ├── fixtures/
 │   └── devin_sample.json      Sample ATIF transcript for offline testing

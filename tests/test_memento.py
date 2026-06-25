@@ -594,6 +594,56 @@ class TestMemoryTools(unittest.TestCase):
         self.assertIn("1 total", mcp_server._memory_stats({}))
 
 
+_PG_DSN = os.environ.get("MEMENTO_TEST_PG_DSN")
+
+
+@unittest.skipUnless(
+    _PG_DSN and importlib.util.find_spec("psycopg"),
+    "set MEMENTO_TEST_PG_DSN (+ pip install psycopg[binary]) to test the Postgres backend")
+class TestPostgresBackend(unittest.TestCase):
+    """Shared per-team Postgres backend — parity with the SQLite engine.
+
+    Run against the team docker-compose:
+        docker compose -f team/docker-compose.yml up -d
+        MEMENTO_TEST_PG_DSN=postgresql://memento:memento@localhost:5432/memento \\
+          python3 -m unittest discover -s tests
+    """
+    NS = "memento-test-suite"
+
+    def setUp(self):
+        import memento_memory_pg
+        self.store = memento_memory_pg.MemoryStorePG(_PG_DSN)
+        self._clean()
+
+    def tearDown(self):
+        self._clean()
+
+    def _clean(self):
+        for m in self.store.list(namespace=self.NS, limit=1000):
+            self.store.forget(mem_id=m["id"])
+
+    def test_save_search_and_isolation(self):
+        a = self.store.save("Fix OrderService", "patch OrderService.persist() bug",
+                             tier="procedural", namespace=self.NS)
+        self.store.save("OrderService test", "cover OrderService.persist() cases",
+                        tier="episodic", namespace=self.NS)
+        hits = self.store.search("orderservice persist", namespace=self.NS, mode="hybrid")
+        self.assertTrue(hits and any(h["id"] == a for h in hits))
+        # namespace isolation: other namespaces don't leak in
+        self.assertTrue(all(h["namespace"] == self.NS for h in hits))
+
+    def test_graph_lessons_and_stats(self):
+        self.store.save("Fix", "patch OrderService.persist()", namespace=self.NS)
+        self.store.save("Test", "test OrderService.persist()", namespace=self.NS)
+        self.store.learn(namespace=self.NS)
+        self.assertTrue(any("OrderService" in m["content"]
+                            for m in self.store.lessons()))
+        self.assertTrue(self.store.graph()["entities"])
+        s = self.store.stats()
+        self.assertGreaterEqual(s["total"], 2)
+        self.assertTrue(s["backend"].startswith("postgres"))
+
+
 _HAS_ENGINE = importlib.util.find_spec("skillopt_sleep") is not None
 
 

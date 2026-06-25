@@ -500,11 +500,12 @@ _MEMORY_STORE = None
 
 
 def _store():
-    """Lazily build (and cache) the memento-owned memory engine."""
+    """Lazily build (and cache) the memory engine — shared Postgres if
+    MEMENTO_DB_URL is set (team mode), else local SQLite."""
     global _MEMORY_STORE
     if _MEMORY_STORE is None:
         import memento_memory
-        _MEMORY_STORE = memento_memory.MemoryStore(export_path=MEMORY_PATH)
+        _MEMORY_STORE = memento_memory.open_store(export_path=MEMORY_PATH)
     return _MEMORY_STORE
 
 
