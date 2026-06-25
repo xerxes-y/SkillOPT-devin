@@ -60,5 +60,14 @@ $ printf '%s\n' \
 `tools/list` exposes the standard interface:
 `['sleep_status','sleep_dry_run','sleep_run','sleep_adopt','sleep_harvest']`.
 
-Happy to also align the MCP schema / add `sleep_schedule`/`unschedule` to match
-`plugins/copilot` if you'd like full parity — just say the word.
+## 3. Schema / tool parity with copilot
+
+Also went ahead and brought the server to **full parity with `plugins/copilot`**:
+the same rich `_TOOL_SCHEMA` (`source`, `model`, `tasks_file`,
+`target_skill_path`, `max_sessions`, `max_tasks`, `lookback_hours`,
+`auto_adopt`, `json`, `edit_budget`, `hour`, `minute`) and generic flag
+forwarding, plus **`sleep_schedule` / `sleep_unschedule`**. The Devin specifics
+are retained: the ATIF harvest runs before data-reading actions (engine pointed
+at it via `--claude-home`, default `--source claude`) and the post-adopt sync
+into `.devin/skills/`. `tools/list` now exposes all 7 `sleep_*` tools; tests
+updated accordingly.
