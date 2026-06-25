@@ -20,13 +20,19 @@ Tools exposed (identical interface to the Copilot plugin):
   memento_adopt     apply the latest staged proposal
   memento_harvest   debug: list mined recurring tasks
   memento_auto      run + auto-adopt above the gate; report the SKILL.md diff
-  memory_save       persist a memory (tier/tags) to the built-in SQLite store
-  memory_recall     BM25 search over saved memories
+  memory_save       persist a memory (tier/tags/namespace) to the SQLite store
+  memory_recall     hybrid search (BM25 + semantic vector, RRF fused)
   memory_list       list recent memories (tier/session filter)
   memory_forget     delete a memory by id or query
   memory_sessions   list sessions with memory counts
   memory_stats      store totals + search backend
   memory_dashboard  start the local web dashboard; return its URL
+  memory_related    knowledge-graph neighbours of a memory
+  memory_graph      knowledge-graph overview (top entities)
+  memory_capture    record a lifecycle event as a working memory
+  memory_consolidate  promote reinforced / forget stale memories
+  memory_pin        protect a memory from decay/consolidation
+  memory_namespaces list scopes; memory_snapshot/restore/audit  governance
 
 Run just the memory dashboard with::
 
@@ -126,6 +132,7 @@ TOOLS = [
                          "description": "Memory tier (default episodic)."},
                 "tags": {"type": "string", "description": "Comma-separated tags (optional)."},
                 "session": {"type": "string", "description": "Session label (optional)."},
+                "namespace": {"type": "string", "description": "Scope (default 'default')."},
             },
             "required": ["title", "content"],
             "additionalProperties": False,
@@ -134,13 +141,16 @@ TOOLS = [
     {
         "name": "memory_recall",
         "action": "memory_recall",
-        "description": "Search saved memories by relevance (BM25 full-text); optional tier filter.",
+        "description": ("Search memories by relevance. Default 'hybrid' fuses BM25 "
+                        "full-text with semantic vector similarity (RRF)."),
         "schema": {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Search text (empty = most recent)."},
                 "limit": {"type": "integer", "description": "Max results (default 10)."},
                 "tier": {"type": "string", "enum": list(_MEM_TIERS)},
+                "mode": {"type": "string", "enum": ["hybrid", "bm25", "vector"]},
+                "namespace": {"type": "string"},
             },
             "additionalProperties": False,
         },
@@ -191,6 +201,100 @@ TOOLS = [
         "schema": {
             "type": "object",
             "properties": {"port": {"type": "integer", "description": "Port (default 3114)."}},
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "memory_related",
+        "action": "memory_related",
+        "description": "Knowledge-graph: memories sharing an entity with the given memory id.",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string", "description": "Memory id to find neighbours of."},
+                "limit": {"type": "integer"},
+            },
+            "required": ["id"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "memory_graph",
+        "action": "memory_graph",
+        "description": "Knowledge-graph overview: top entities and link counts.",
+        "schema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+    {
+        "name": "memory_capture",
+        "action": "memory_capture",
+        "description": ("Capture-hook: record an agent lifecycle event "
+                        "(SessionStart, PreToolUse, …) as a working memory."),
+        "schema": {
+            "type": "object",
+            "properties": {
+                "event": {"type": "string", "description": "Lifecycle event name."},
+                "payload": {"type": "string", "description": "Event detail."},
+                "session": {"type": "string"},
+            },
+            "required": ["event", "payload"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "memory_consolidate",
+        "action": "memory_consolidate",
+        "description": ("Lifecycle: promote reinforced memories up a tier and "
+                        "auto-forget stale, never-accessed working memories."),
+        "schema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+    {
+        "name": "memory_pin",
+        "action": "memory_pin",
+        "description": "Pin (or unpin) a memory so decay/consolidation never removes it.",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "pinned": {"type": "boolean", "description": "Default true."},
+            },
+            "required": ["id"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "memory_namespaces",
+        "action": "memory_namespaces",
+        "description": "Governance: list memory namespaces (scopes) with counts.",
+        "schema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+    {
+        "name": "memory_snapshot",
+        "action": "memory_snapshot",
+        "description": "Governance: write a git-versionable snapshot of all memories.",
+        "schema": {
+            "type": "object",
+            "properties": {"path": {"type": "string", "description": "Output path."}},
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "memory_restore",
+        "action": "memory_restore",
+        "description": "Governance: restore memories from a snapshot file.",
+        "schema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "memory_audit",
+        "action": "memory_audit",
+        "description": "Governance: recent audit-log entries (saves, forgets, consolidations).",
+        "schema": {
+            "type": "object",
+            "properties": {"limit": {"type": "integer"}},
             "additionalProperties": False,
         },
     },
@@ -393,7 +497,8 @@ def _memory_save(args: dict) -> str:
     try:
         mid = _store().save(args.get("title"), args.get("content"),
                             tier=args.get("tier"), tags=args.get("tags"),
-                            session=args.get("session", ""))
+                            session=args.get("session", ""),
+                            namespace=args.get("namespace") or "default")
     except ValueError as exc:
         return f"[memory] error: {exc}"
     return f"[memory] saved ({mid}) in tier '{args.get('tier') or 'episodic'}': {args.get('title')}"
@@ -401,7 +506,8 @@ def _memory_save(args: dict) -> str:
 
 def _memory_recall(args: dict) -> str:
     return _fmt(_store().search(args.get("query"), limit=args.get("limit") or 10,
-                                tier=args.get("tier")))
+                                tier=args.get("tier"), namespace=args.get("namespace"),
+                                mode=args.get("mode") or "hybrid"))
 
 
 def _memory_list(args: dict) -> str:
@@ -436,6 +542,64 @@ def _memory_dashboard(args: dict) -> str:
     return f"[memory] dashboard running at {url}"
 
 
+def _memory_related(args: dict) -> str:
+    rows = _store().related(args.get("id"), limit=args.get("limit") or 10)
+    return _fmt(rows)
+
+
+def _memory_graph(_args: dict) -> str:
+    g = _store().graph()
+    if not g["entities"]:
+        return "[memory] knowledge graph is empty."
+    top = ", ".join(f"{e['name']}({e['count']})" for e in g["entities"][:20])
+    return (f"[memory] {len(g['entities'])} entities, {len(g['edges'])} links. "
+            f"Top: {top}")
+
+
+def _memory_capture(args: dict) -> str:
+    mid = _store().capture(args.get("event") or "Event", args.get("payload") or "",
+                           session=args.get("session", ""))
+    return f"[memory] captured {args.get('event')} → {mid}"
+
+
+def _memory_consolidate(_args: dict) -> str:
+    r = _store().consolidate()
+    return f"[memory] consolidated: promoted {r['promoted']}, forgot {r['forgotten']}."
+
+
+def _memory_pin(args: dict) -> str:
+    ok = _store().pin(args.get("id"), pinned=args.get("pinned", True))
+    return f"[memory] {'pinned' if args.get('pinned', True) else 'unpinned'} " + \
+           (args.get("id") or "") + ("" if ok else " (not found)")
+
+
+def _memory_namespaces(_args: dict) -> str:
+    rows = _store().namespaces()
+    return "[memory] namespaces:\n" + "\n".join(
+        f"- {r['namespace']}: {r['n']}" for r in rows) if rows else "[memory] none."
+
+
+def _memory_snapshot(args: dict) -> str:
+    path = args.get("path") or os.path.join(CLAUDE_HOME, "memory-snapshot.json")
+    n = _store().snapshot(path)
+    return f"[memory] snapshot of {n} memories → {path}"
+
+
+def _memory_restore(args: dict) -> str:
+    path = args.get("path")
+    if not path or not os.path.isfile(path):
+        return "[memory] error: 'path' to a snapshot file is required."
+    return f"[memory] restored {_store().restore(path)} memories from {path}"
+
+
+def _memory_audit(args: dict) -> str:
+    rows = _store().audit_log(limit=args.get("limit") or 20)
+    if not rows:
+        return "[memory] audit log empty."
+    return "[memory] audit:\n" + "\n".join(
+        f"- {r['op']} {r['mem_id']} {r['detail']}".rstrip() for r in rows)
+
+
 _MEMORY_ACTIONS = {
     "memory_save": _memory_save,
     "memory_recall": _memory_recall,
@@ -444,6 +608,15 @@ _MEMORY_ACTIONS = {
     "memory_sessions": _memory_sessions,
     "memory_stats": _memory_stats,
     "memory_dashboard": _memory_dashboard,
+    "memory_related": _memory_related,
+    "memory_graph": _memory_graph,
+    "memory_capture": _memory_capture,
+    "memory_consolidate": _memory_consolidate,
+    "memory_pin": _memory_pin,
+    "memory_namespaces": _memory_namespaces,
+    "memory_snapshot": _memory_snapshot,
+    "memory_restore": _memory_restore,
+    "memory_audit": _memory_audit,
 }
 
 # ── JSON-RPC / MCP plumbing ───────────────────────────────────────────────────

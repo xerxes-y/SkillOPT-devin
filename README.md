@@ -162,13 +162,19 @@ Or call tools directly:
 | `memento_run` | full cycle; stages a proposal for your review |
 | `memento_adopt` | apply the staged proposal; syncs skill to workspace |
 | `memento_harvest` | debug: list the recurring tasks mined |
-| `memory_save` | persist a memory (`title`, `content`, `tier`, `tags`) to the built-in store |
-| `memory_recall` | BM25 relevance search over memories (optional `tier`) |
+| `memory_save` | persist a memory (`title`, `content`, `tier`, `tags`, `namespace`) |
+| `memory_recall` | hybrid search — BM25 + semantic vector, RRF-fused (`mode`, `tier`) |
 | `memory_list` | list recent memories (optional `tier` / `session`) |
 | `memory_forget` | delete a memory by `id` or by `query` |
-| `memory_sessions` | sessions with memory counts |
-| `memory_stats` | totals, per-tier counts, search backend |
-| `memory_dashboard` | start the local web dashboard; returns its URL |
+| `memory_related` | knowledge-graph neighbours of a memory (shared entities) |
+| `memory_graph` | knowledge-graph overview (top entities) |
+| `memory_capture` | record a lifecycle event (e.g. `PreToolUse`) as a working memory |
+| `memory_consolidate` | promote reinforced memories; auto-forget stale ones |
+| `memory_pin` | protect a memory from decay/consolidation |
+| `memory_namespaces` | list scopes with counts |
+| `memory_snapshot` / `memory_restore` | git-versionable backup / restore |
+| `memory_audit` | recent audit-log entries |
+| `memory_sessions` / `memory_stats` / `memory_dashboard` | sessions · stats · web UI |
 
 The sleep-cycle tools (`memento_*`) accept:
 
@@ -212,18 +218,28 @@ go to `~/.memento/memento-auto.log`. Remove with
 
 ## Built-in memory
 
-memento ships its **own** memory engine ([`memento_memory.py`](memento_memory.py)) —
-no external memory MCP, no Node. It is **stdlib-only** (SQLite + `http.server`):
+memento ships its **own** agentmemory-class memory engine
+([`memento_memory.py`](memento_memory.py)) — no external memory MCP, no Node.
+**stdlib-only** (SQLite + `http.server` + `math`):
 
-- **SQLite store** with **BM25 full-text search** (FTS5; falls back to `LIKE` if
-  your SQLite lacks FTS5).
-- **Memory tiers** — `working` / `episodic` / `semantic` / `procedural`.
-- **Secret redaction** — API keys/tokens are stripped before anything is stored.
-- **Local web dashboard** — browse / search / add / forget memories in the
-  browser.
-- **agentmemory-compatible export** — mirrors to `standalone.json`, so the sleep
-  cycle harvests saved memories automatically (and it interoperates with
-  [agentmemory](https://github.com/rohitg00/agentmemory) if you also run it).
+- **Hybrid retrieval** — **BM25** full-text (FTS5, `LIKE` fallback) **fused with
+  semantic vector** similarity via **Reciprocal Rank Fusion** (`mode`:
+  `hybrid` / `bm25` / `vector`).
+- **Memory tiers** — `working` / `episodic` / `semantic` / `procedural`, with
+  **auto-consolidation** (reinforced memories promote up a tier) and **decay /
+  auto-forget** of stale, never-used working memories. `memory_pin` protects a
+  memory.
+- **Knowledge graph** — entity extraction + `memory_related` (neighbours that
+  share an entity) and `memory_graph` (overview), with a graph tab in the
+  dashboard.
+- **Capture hooks** — `memory_capture` records agent lifecycle events
+  (SessionStart, PreToolUse, …) as working memories.
+- **Governance** — namespaces (scopes), an **audit log**, and git-versionable
+  **snapshot / restore**.
+- **Secret redaction** before storage; **agentmemory-compatible export** to
+  `standalone.json` so the sleep cycle harvests memories automatically (and it
+  interoperates with [agentmemory](https://github.com/rohitg00/agentmemory) if
+  you also run it).
 
 Open the dashboard (ask Devin to run `memory_dashboard`, or standalone):
 
@@ -231,10 +247,11 @@ Open the dashboard (ask Devin to run `memory_dashboard`, or standalone):
 python3 mcp_server.py --web --port 3114    # → http://127.0.0.1:3114
 ```
 
-> **Roadmap.** This is Phase 1 (foundation). Planned, layering on the same
-> schema: vector/semantic search + RRF fusion, a knowledge graph + graph view,
-> 4-tier auto-consolidation & decay, capture hooks, and governance/snapshots —
-> toward agentmemory-class coverage, all owned by this project.
+> **Scope note.** Embeddings are deterministic term-frequency vectors (real
+> vector-space cosine, no model/API needed) — for synonym-level semantics, swap
+> in a neural embedder via the `Embedder` class. Entity extraction is heuristic.
+> This is agentmemory-*class* core coverage (~16 memory tools), not a
+> byte-for-byte clone of its 53-tool surface.
 
 ---
 

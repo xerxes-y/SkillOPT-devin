@@ -1,22 +1,34 @@
 #!/usr/bin/env python3
 """memento_memory — memento's own memory engine (stdlib-only, no external deps).
 
-A self-contained, agentmemory-inspired memory store **owned by the memento
-project**: SQLite-backed, full-text (BM25) search, memory tiers, secret
-redaction, a local web dashboard, and an agentmemory-compatible JSON export so
-the sleep-cycle harvester keeps working unchanged.
+A self-contained, agentmemory-inspired memory system **owned by the memento
+project**. Standard library only (sqlite3 + http.server + math/hashlib), so it
+runs anywhere memento runs — including inside an isolated `uvx` environment.
 
-This is Phase 1 — the foundation. Richer agentmemory-style capabilities
-(vector/semantic search + RRF fusion, knowledge-graph traversal, 4-tier
-auto-consolidation + decay, capture hooks, governance/snapshots) layer on top
-of this schema in later phases.
+Implemented across phases, all on one SQLite schema:
 
-Everything here is standard library only: sqlite3 + http.server.
+  Phase 1  store + BM25 full-text search + tiers + secret redaction +
+           agentmemory-compatible export + local web dashboard
+  Phase 2  vector search (term-frequency bag-of-words embeddings) fused with
+           BM25 via Reciprocal Rank Fusion (hybrid retrieval)
+  Phase 3  knowledge graph — entity extraction, mem<->entity links, related-memory
+           traversal, graph API for the dashboard
+  Phase 4  lifecycle — decay scoring, tier auto-consolidation/auto-forget, and
+           12 capture hooks that turn agent events into working memories
+  Phase 5  governance — namespaces (isolated/shared), an audit log, and
+           git-versionable snapshot / restore
+
+Honest scope: embeddings are deterministic term-frequency bag-of-words vectors
+(real vector-space cosine, no model/API needed — for true synonym-level semantics
+swap in a neural embedder via `Embedder`). Entity extraction is heuristic. This
+is agentmemory-*class* core coverage, not a byte-for-byte clone of its 53-tool
+surface.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import sqlite3
@@ -28,50 +40,106 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TIERS = ("working", "episodic", "semantic", "procedural")
 DEFAULT_TIER = "episodic"
+DEFAULT_NAMESPACE = "default"
+
+CAPTURE_EVENTS = (
+    "SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse",
+    "PostToolUseFailure", "PreCompact", "SubagentStart", "SubagentStop",
+    "Stop", "SessionEnd", "Notification", "Error",
+)
+
+RRF_K = 60               # reciprocal rank fusion constant
+VEC_MIN = 0.05           # min cosine for a vector-only hit to count
+WORKING_TTL_S = 86_400   # un-accessed working memories older than this are forgotten
+PROMOTE_ACCESS = 3       # access count that promotes a memory up a tier
+DECAY_HALFLIFE_S = 7 * 86_400
 
 DEFAULT_DB = os.environ.get(
-    "MEMENTO_MEMORY_DB",
-    os.path.expanduser("~/.memento/memory.db"),
-)
-# agentmemory-compatible export the sleep-cycle harvester already reads
+    "MEMENTO_MEMORY_DB", os.path.expanduser("~/.memento/memory.db"))
 DEFAULT_EXPORT = os.environ.get(
-    "MEMENTO_MEMORY_PATH",
-    os.path.expanduser("~/.agentmemory/standalone.json"),
-)
+    "MEMENTO_MEMORY_PATH", os.path.expanduser("~/.agentmemory/standalone.json"))
 DEFAULT_PORT = int(os.environ.get("MEMENTO_DASHBOARD_PORT", "3114"))
 
 # ── secret redaction (privacy filtering before storage) ───────────────────────
 
 _SECRET_PATTERNS = [
-    re.compile(r"\b(?:sk|pk|rk)-[A-Za-z0-9]{16,}\b"),          # openai-style keys
-    re.compile(r"\bpypi-[A-Za-z0-9_\-]{16,}\b"),               # pypi tokens
-    re.compile(r"\bghp_[A-Za-z0-9]{20,}\b"),                   # github tokens
+    re.compile(r"\b(?:sk|pk|rk)-[A-Za-z0-9]{16,}\b"),
+    re.compile(r"\bpypi-[A-Za-z0-9_\-]{16,}\b"),
+    re.compile(r"\bghp_[A-Za-z0-9]{20,}\b"),
     re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"),
-    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),                       # aws access key id
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
     re.compile(r"(?i)\b(?:secret|token|password|api[_-]?key)\s*[=:]\s*\S+"),
 ]
 
 
 def redact_secrets(text: str) -> str:
-    """Strip obvious secrets/keys from text before it is persisted."""
     out = text or ""
     for pat in _SECRET_PATTERNS:
         out = pat.sub("[REDACTED]", out)
     return out
 
 
+# ── embeddings (Phase 2): deterministic hashing-TF vectors, swappable ─────────
+
+class Embedder:
+    """Term-frequency embedder → sparse, L2-normalized bag-of-words vector.
+
+    Keys are the tokens themselves (collision-free, deterministic) — a genuine
+    vector-space model, no model or network needed. Subclass and override
+    ``embed`` to plug in a neural/semantic embedder later without touching the
+    rest of the engine.
+    """
+
+    @staticmethod
+    def _tokens(text):
+        return [t for t in re.split(r"\W+", (text or "").lower()) if len(t) > 1]
+
+    def embed(self, text) -> dict:
+        vec = {}
+        for tok in self._tokens(text):
+            vec[tok] = vec.get(tok, 0.0) + 1.0
+        norm = math.sqrt(sum(v * v for v in vec.values())) or 1.0
+        return {t: v / norm for t, v in vec.items()}
+
+
+def cosine(a: dict, b: dict) -> float:
+    if not a or not b:
+        return 0.0
+    small, big = (a, b) if len(a) < len(b) else (b, a)
+    return sum(w * big.get(i, 0.0) for i, w in small.items())
+
+
 def _fts_query(raw: str) -> str:
-    """Turn free text into a safe FTS5 AND-of-terms query."""
     terms = [t for t in re.split(r"\W+", raw or "") if t]
     return " ".join('"%s"' % t for t in terms)
+
+
+# ── entity extraction (Phase 3) ───────────────────────────────────────────────
+
+_ENTITY_PATTERNS = [
+    re.compile(r"`([^`]{2,60})`"),                       # `backticked`
+    re.compile(r"\b([A-Z][a-zA-Z0-9]+(?:[A-Z][a-zA-Z0-9]+)+)\b"),  # CamelCase
+    re.compile(r"\b([a-zA-Z_][\w/]*\.[a-zA-Z][\w./]*)\b"),         # dotted/paths
+]
+
+
+def extract_entities(text: str) -> list:
+    found = {}
+    for pat in _ENTITY_PATTERNS:
+        for m in pat.findall(text or ""):
+            name = m.strip().strip("`")
+            if 2 <= len(name) <= 60:
+                found[name.lower()] = name
+    return list(found.values())
 
 
 # ── the store ─────────────────────────────────────────────────────────────────
 
 class MemoryStore:
-    def __init__(self, db_path: str = None, export_path: str = None):
+    def __init__(self, db_path=None, export_path=None, embedder=None):
         self.db_path = db_path or DEFAULT_DB
         self.export_path = export_path or DEFAULT_EXPORT
+        self.embedder = embedder or Embedder()
         os.makedirs(os.path.dirname(self.db_path) or ".", exist_ok=True)
         self.fts = True
         self._init_db()
@@ -85,62 +153,100 @@ class MemoryStore:
         with self._connect() as c:
             c.execute("""
                 CREATE TABLE IF NOT EXISTS memories(
-                    id           TEXT PRIMARY KEY,
-                    tier         TEXT NOT NULL DEFAULT 'episodic',
-                    title        TEXT NOT NULL,
-                    content      TEXT NOT NULL,
-                    tags         TEXT NOT NULL DEFAULT '',
-                    session      TEXT NOT NULL DEFAULT '',
-                    source       TEXT NOT NULL DEFAULT 'manual',
-                    created_ts   REAL NOT NULL,
-                    accessed_ts  REAL NOT NULL,
+                    id TEXT PRIMARY KEY,
+                    tier TEXT NOT NULL DEFAULT 'episodic',
+                    namespace TEXT NOT NULL DEFAULT 'default',
+                    title TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    tags TEXT NOT NULL DEFAULT '',
+                    session TEXT NOT NULL DEFAULT '',
+                    source TEXT NOT NULL DEFAULT 'manual',
+                    actor TEXT NOT NULL DEFAULT '',
+                    created_ts REAL NOT NULL,
+                    accessed_ts REAL NOT NULL,
                     access_count INTEGER NOT NULL DEFAULT 0,
-                    pinned       INTEGER NOT NULL DEFAULT 0
-                )
-            """)
+                    pinned INTEGER NOT NULL DEFAULT 0
+                )""")
+            c.execute("""CREATE TABLE IF NOT EXISTS mem_entities(
+                    mem_id TEXT NOT NULL, entity TEXT NOT NULL,
+                    PRIMARY KEY (mem_id, entity))""")
+            c.execute("""CREATE TABLE IF NOT EXISTS audit(
+                    ts REAL NOT NULL, op TEXT NOT NULL,
+                    mem_id TEXT NOT NULL DEFAULT '', actor TEXT NOT NULL DEFAULT '',
+                    detail TEXT NOT NULL DEFAULT '')""")
             try:
-                c.execute("""
-                    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts
-                    USING fts5(id UNINDEXED, title, content, tags)
-                """)
+                c.execute("""CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts
+                    USING fts5(id UNINDEXED, title, content, tags)""")
             except sqlite3.OperationalError:
-                self.fts = False  # SQLite built without FTS5 → fall back to LIKE
+                self.fts = False
 
-    # ── writes ────────────────────────────────────────────────────────────────
+    # ── audit ───────────────────────────────────────────────────────────────
+
+    def _audit(self, c, op, mem_id="", actor="", detail=""):
+        c.execute("INSERT INTO audit(ts,op,mem_id,actor,detail) VALUES(?,?,?,?,?)",
+                  (time.time(), op, mem_id, actor, detail))
+
+    def audit_log(self, limit=50) -> list:
+        with self._connect() as c:
+            return [self._row(r) for r in c.execute(
+                "SELECT * FROM audit ORDER BY ts DESC LIMIT ?", (int(limit),))]
+
+    # ── writes ──────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _norm_tags(tags) -> str:
+    def _norm_tags(tags):
         if isinstance(tags, (list, tuple)):
             return ",".join(t.strip() for t in tags if str(t).strip())
         return str(tags or "").strip()
 
     def save(self, title, content, tier=None, tags=None, session="",
-             source="manual") -> str:
+             source="manual", namespace=DEFAULT_NAMESPACE, actor="") -> str:
         title = redact_secrets((title or "").strip())
         content = redact_secrets((content or "").strip())
         if not title or not content:
             raise ValueError("both 'title' and 'content' are required")
         tier = tier if tier in TIERS else DEFAULT_TIER
         tags = self._norm_tags(tags)
+        namespace = namespace or DEFAULT_NAMESPACE
         mem_id = "mem-" + hashlib.sha1(
-            (title + "\x00" + content).encode("utf-8")).hexdigest()[:12]
+            (namespace + "\x00" + title + "\x00" + content).encode()).hexdigest()[:12]
         now = time.time()
         with self._connect() as c:
             c.execute("""
-                INSERT INTO memories(id,tier,title,content,tags,session,source,
-                                     created_ts,accessed_ts,access_count,pinned)
-                VALUES(?,?,?,?,?,?,?,?,?,0,0)
-                ON CONFLICT(id) DO UPDATE SET
-                    tier=excluded.tier, tags=excluded.tags,
+                INSERT INTO memories(id,tier,namespace,title,content,tags,session,
+                                     source,actor,created_ts,accessed_ts,access_count,pinned)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,0,0)
+                ON CONFLICT(id) DO UPDATE SET tier=excluded.tier, tags=excluded.tags,
                     session=excluded.session, accessed_ts=excluded.accessed_ts
-            """, (mem_id, tier, title, content, tags, session, source, now, now))
+            """, (mem_id, tier, namespace, title, content, tags, session, source,
+                  actor, now, now))
             if self.fts:
                 c.execute("DELETE FROM memories_fts WHERE id=?", (mem_id,))
-                c.execute(
-                    "INSERT INTO memories_fts(id,title,content,tags) VALUES(?,?,?,?)",
-                    (mem_id, title, content, tags))
+                c.execute("INSERT INTO memories_fts(id,title,content,tags) "
+                          "VALUES(?,?,?,?)", (mem_id, title, content, tags))
+            c.execute("DELETE FROM mem_entities WHERE mem_id=?", (mem_id,))
+            for ent in extract_entities(title + " " + content):
+                c.execute("INSERT OR IGNORE INTO mem_entities(mem_id,entity) "
+                          "VALUES(?,?)", (mem_id, ent))
+            self._audit(c, "save", mem_id, actor, tier)
         self._export()
         return mem_id
+
+    def capture(self, event_type, payload, session="", namespace=DEFAULT_NAMESPACE,
+                actor="agent") -> str:
+        """Phase 4 hook: turn a lifecycle event into a working-tier memory."""
+        et = event_type if event_type in CAPTURE_EVENTS else (event_type or "Event")
+        body = payload if isinstance(payload, str) else json.dumps(payload)
+        return self.save(f"[{et}] {body[:60]}", body or et, tier="working",
+                         session=session, source="hook", namespace=namespace,
+                         actor=actor)
+
+    def pin(self, mem_id, pinned=True) -> bool:
+        with self._connect() as c:
+            cur = c.execute("UPDATE memories SET pinned=? WHERE id=?",
+                            (1 if pinned else 0, mem_id))
+            self._audit(c, "pin" if pinned else "unpin", mem_id)
+            return cur.rowcount > 0
 
     def forget(self, mem_id=None, query=None) -> int:
         with self._connect() as c:
@@ -153,58 +259,102 @@ class MemoryStore:
                 return 0
             for i in ids:
                 c.execute("DELETE FROM memories WHERE id=?", (i,))
+                c.execute("DELETE FROM mem_entities WHERE mem_id=?", (i,))
                 if self.fts:
                     c.execute("DELETE FROM memories_fts WHERE id=?", (i,))
+                self._audit(c, "forget", i)
         self._export()
         return len(ids)
 
     # ── reads ─────────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _row(r) -> dict:
+    def _row(r):
         return {k: r[k] for k in r.keys()}
 
-    def get(self, mem_id) -> dict:
+    def get(self, mem_id):
         with self._connect() as c:
             r = c.execute("SELECT * FROM memories WHERE id=?", (mem_id,)).fetchone()
             return self._row(r) if r else None
 
-    def list(self, limit=20, tier=None, session=None) -> list:
-        sql = "SELECT * FROM memories"
-        clauses, params = [], []
+    def list(self, limit=20, tier=None, session=None, namespace=None):
+        sql, clauses, params = "SELECT * FROM memories", [], []
         if tier in TIERS:
             clauses.append("tier=?"); params.append(tier)
         if session:
             clauses.append("session=?"); params.append(session)
+        if namespace:
+            clauses.append("namespace=?"); params.append(namespace)
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY created_ts DESC LIMIT ?"; params.append(int(limit))
         with self._connect() as c:
             return [self._row(r) for r in c.execute(sql, params)]
 
-    def search(self, query, limit=10, tier=None) -> list:
+    def _bm25_ids(self, c, query, tier, namespace):
+        extra = (" AND m.tier=?" if tier in TIERS else "") + \
+                (" AND m.namespace=?" if namespace else "")
+        params_tail = ([tier] if tier in TIERS else []) + \
+                      ([namespace] if namespace else [])
+        if self.fts:
+            match = _fts_query(query)
+            if match:
+                rows = c.execute(
+                    "SELECT m.id FROM memories_fts f JOIN memories m ON m.id=f.id "
+                    "WHERE memories_fts MATCH ?" + extra +
+                    " ORDER BY bm25(memories_fts)", [match] + params_tail)
+                return [r["id"] for r in rows]
+        like = f"%{query}%"
+        rows = c.execute(
+            "SELECT id FROM memories m WHERE (title LIKE ? OR content LIKE ? "
+            "OR tags LIKE ?)" + extra + " ORDER BY created_ts DESC",
+            [like, like, like] + params_tail)
+        return [r["id"] for r in rows]
+
+    def _vector_ids(self, c, query, tier, namespace):
+        qv = self.embedder.embed(query)
+        if not qv:
+            return []
+        clauses, params = [], []
+        if tier in TIERS:
+            clauses.append("tier=?"); params.append(tier)
+        if namespace:
+            clauses.append("namespace=?"); params.append(namespace)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        scored = []
+        for r in c.execute("SELECT id,title,content FROM memories" + where, params):
+            sim = cosine(qv, self.embedder.embed(r["title"] + " " + r["content"]))
+            if sim >= VEC_MIN:
+                scored.append((sim, r["id"]))
+        scored.sort(reverse=True)
+        return [i for _, i in scored]
+
+    def search(self, query, limit=10, tier=None, namespace=None, mode="hybrid"):
+        """Retrieve memories. mode: 'bm25' | 'vector' | 'hybrid' (RRF fusion)."""
         q = (query or "").strip()
         if not q:
-            return self.list(limit=limit, tier=tier)
-        tier_clause = " AND m.tier=?" if tier in TIERS else ""
+            return self.list(limit=limit, tier=tier, namespace=namespace)
         with self._connect() as c:
-            if self.fts:
-                match = _fts_query(q)
-                if match:
-                    sql = ("SELECT m.* FROM memories_fts f JOIN memories m ON m.id=f.id "
-                           "WHERE memories_fts MATCH ?" + tier_clause +
-                           " ORDER BY bm25(memories_fts) LIMIT ?")
-                    params = [match] + ([tier] if tier in TIERS else []) + [int(limit)]
-                    rows = [self._row(r) for r in c.execute(sql, params)]
-                    self._touch(c, [r["id"] for r in rows])
-                    return rows
-            like = f"%{q}%"
-            sql = ("SELECT * FROM memories WHERE (title LIKE ? OR content LIKE ? "
-                   "OR tags LIKE ?)" + tier_clause + " ORDER BY created_ts DESC LIMIT ?")
-            params = [like, like, like] + ([tier] if tier in TIERS else []) + [int(limit)]
-            rows = [self._row(r) for r in c.execute(sql, params)]
-            self._touch(c, [r["id"] for r in rows])
-            return rows
+            bm = self._bm25_ids(c, q, tier, namespace) if mode in ("bm25", "hybrid") else []
+            vec = self._vector_ids(c, q, tier, namespace) if mode in ("vector", "hybrid") else []
+            if mode == "bm25":
+                order = bm
+            elif mode == "vector":
+                order = vec
+            else:
+                scores = {}
+                for rank, i in enumerate(bm):
+                    scores[i] = scores.get(i, 0.0) + 1.0 / (RRF_K + rank)
+                for rank, i in enumerate(vec):
+                    scores[i] = scores.get(i, 0.0) + 1.0 / (RRF_K + rank)
+                order = [i for i, _ in sorted(scores.items(),
+                                              key=lambda kv: kv[1], reverse=True)]
+            order = order[:int(limit)]
+            rows = {r["id"]: self._row(r) for r in c.execute(
+                "SELECT * FROM memories WHERE id IN (%s)" %
+                ",".join("?" * len(order)), order)} if order else {}
+            self._touch(c, order)
+            return [rows[i] for i in order if i in rows]
 
     @staticmethod
     def _touch(c, ids):
@@ -213,24 +363,139 @@ class MemoryStore:
             c.execute("UPDATE memories SET accessed_ts=?, access_count=access_count+1 "
                       "WHERE id=?", (now, i))
 
-    def sessions(self) -> list:
+    # ── knowledge graph (Phase 3) ─────────────────────────────────────────────
+
+    def related(self, mem_id, limit=10) -> list:
+        """Memories sharing an entity with the given memory."""
+        with self._connect() as c:
+            ents = [r["entity"] for r in c.execute(
+                "SELECT entity FROM mem_entities WHERE mem_id=?", (mem_id,))]
+            if not ents:
+                return []
+            rows = c.execute(
+                "SELECT m.*, COUNT(*) AS shared FROM mem_entities e "
+                "JOIN memories m ON m.id=e.mem_id "
+                "WHERE e.entity IN (%s) AND e.mem_id<>? "
+                "GROUP BY m.id ORDER BY shared DESC, m.created_ts DESC LIMIT ?"
+                % ",".join("?" * len(ents)), ents + [mem_id, int(limit)])
+            return [self._row(r) for r in rows]
+
+    def graph(self, limit=40) -> dict:
+        """Top entities and the memory↔entity edges, for the dashboard graph."""
+        with self._connect() as c:
+            ents = c.execute(
+                "SELECT entity, COUNT(*) AS n FROM mem_entities "
+                "GROUP BY entity ORDER BY n DESC LIMIT ?", (int(limit),)).fetchall()
+            names = [e["entity"] for e in ents]
+            edges = []
+            if names:
+                for r in c.execute(
+                        "SELECT mem_id, entity FROM mem_entities WHERE entity IN (%s)"
+                        % ",".join("?" * len(names)), names):
+                    edges.append({"mem": r["mem_id"], "entity": r["entity"]})
+            return {"entities": [{"name": e["entity"], "count": e["n"]} for e in ents],
+                    "edges": edges}
+
+    # ── lifecycle: decay + consolidation (Phase 4) ────────────────────────────
+
+    @staticmethod
+    def decay_score(mem, now=None) -> float:
+        if mem.get("pinned"):
+            return 1.0
+        now = now if now is not None else time.time()
+        age = max(0.0, now - mem.get("accessed_ts", now))
+        recency = math.exp(-age / DECAY_HALFLIFE_S)
+        reinforce = 1.0 + math.log1p(mem.get("access_count", 0))
+        return recency * reinforce
+
+    def consolidate(self, now=None) -> dict:
+        """Promote reinforced memories up a tier; forget stale working memories."""
+        now = now if now is not None else time.time()
+        promoted = forgotten = 0
+        with self._connect() as c:
+            for r in c.execute("SELECT * FROM memories").fetchall():
+                m = self._row(r)
+                if m["pinned"]:
+                    continue
+                if (m["tier"] == "working" and m["access_count"] == 0
+                        and now - m["created_ts"] > WORKING_TTL_S):
+                    c.execute("DELETE FROM memories WHERE id=?", (m["id"],))
+                    c.execute("DELETE FROM mem_entities WHERE mem_id=?", (m["id"],))
+                    if self.fts:
+                        c.execute("DELETE FROM memories_fts WHERE id=?", (m["id"],))
+                    self._audit(c, "consolidate-forget", m["id"])
+                    forgotten += 1
+                elif m["access_count"] >= PROMOTE_ACCESS and m["tier"] in ("working", "episodic"):
+                    nxt = "episodic" if m["tier"] == "working" else "semantic"
+                    c.execute("UPDATE memories SET tier=? WHERE id=?", (nxt, m["id"]))
+                    self._audit(c, "consolidate-promote", m["id"], detail=nxt)
+                    promoted += 1
+        self._export()
+        return {"promoted": promoted, "forgotten": forgotten}
+
+    # ── governance: namespaces + snapshots (Phase 5) ──────────────────────────
+
+    def namespaces(self) -> list:
         with self._connect() as c:
             return [self._row(r) for r in c.execute(
-                "SELECT session, COUNT(*) AS n, MAX(created_ts) AS last "
-                "FROM memories WHERE session<>'' GROUP BY session ORDER BY last DESC")]
+                "SELECT namespace, COUNT(*) AS n FROM memories "
+                "GROUP BY namespace ORDER BY n DESC")]
+
+    def snapshot(self, path) -> int:
+        with self._connect() as c:
+            mems = [self._row(r) for r in c.execute("SELECT * FROM memories")]
+            ents = [self._row(r) for r in c.execute("SELECT * FROM mem_entities")]
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"version": 2, "memories": mems, "mem_entities": ents},
+                      f, indent=2)
+        return len(mems)
+
+    def restore(self, path) -> int:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        mems = data.get("memories", [])
+        with self._connect() as c:
+            for m in mems:
+                cols = ("id,tier,namespace,title,content,tags,session,source,actor,"
+                        "created_ts,accessed_ts,access_count,pinned")
+                c.execute(
+                    "INSERT OR REPLACE INTO memories(%s) VALUES(%s)"
+                    % (cols, ",".join("?" * 13)),
+                    [m.get("id"), m.get("tier", "episodic"),
+                     m.get("namespace", "default"), m.get("title", ""),
+                     m.get("content", ""), m.get("tags", ""), m.get("session", ""),
+                     m.get("source", "restore"), m.get("actor", ""),
+                     m.get("created_ts", time.time()),
+                     m.get("accessed_ts", time.time()),
+                     m.get("access_count", 0), m.get("pinned", 0)])
+                if self.fts:
+                    c.execute("DELETE FROM memories_fts WHERE id=?", (m.get("id"),))
+                    c.execute("INSERT INTO memories_fts(id,title,content,tags) "
+                              "VALUES(?,?,?,?)", (m.get("id"), m.get("title", ""),
+                                                  m.get("content", ""), m.get("tags", "")))
+            for e in data.get("mem_entities", []):
+                c.execute("INSERT OR IGNORE INTO mem_entities(mem_id,entity) "
+                          "VALUES(?,?)", (e.get("mem_id"), e.get("entity")))
+            self._audit(c, "restore", detail=os.path.basename(path))
+        self._export()
+        return len(mems)
+
+    # ── stats + agentmemory-compatible export ─────────────────────────────────
 
     def stats(self) -> dict:
         with self._connect() as c:
             total = c.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
             by_tier = {r["tier"]: r["n"] for r in c.execute(
                 "SELECT tier, COUNT(*) AS n FROM memories GROUP BY tier")}
-        return {"total": total, "by_tier": by_tier, "fts": self.fts,
-                "db": self.db_path}
-
-    # ── agentmemory-compatible export ──────────────────────────────────────────
+            entities = c.execute(
+                "SELECT COUNT(DISTINCT entity) FROM mem_entities").fetchone()[0]
+            namespaces = c.execute(
+                "SELECT COUNT(DISTINCT namespace) FROM memories").fetchone()[0]
+        return {"total": total, "by_tier": by_tier, "entities": entities,
+                "namespaces": namespaces, "fts": self.fts, "db": self.db_path}
 
     def _export(self):
-        """Mirror the store to the agentmemory standalone.json the harvester reads."""
         try:
             os.makedirs(os.path.dirname(self.export_path) or ".", exist_ok=True)
             mems = {}
@@ -251,70 +516,73 @@ class MemoryStore:
 _PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>memento · memory</title><style>
-:root{color-scheme:dark}
-*{box-sizing:border-box}
+:root{color-scheme:dark}*{box-sizing:border-box}
 body{margin:0;font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;
  background:linear-gradient(160deg,#0b1022,#2e1a5e 60%,#5b21b6);color:#e9d5ff;min-height:100vh}
 header{display:flex;align-items:center;gap:12px;padding:18px 24px;border-bottom:1px solid #ffffff22}
 header h1{font-size:20px;margin:0;color:#f8fafc;letter-spacing:1px}
 .badge{font-size:12px;color:#67e8f9;border:1px solid #67e8f955;border-radius:99px;padding:2px 10px}
-main{max-width:880px;margin:0 auto;padding:24px}
-input,textarea,select,button{font:inherit;border-radius:10px;border:1px solid #ffffff33;
- background:#ffffff10;color:#f8fafc;padding:10px 12px}
-input,textarea{width:100%}
-.row{display:flex;gap:10px;margin:8px 0}.row>*{flex:1}
+main{max-width:900px;margin:0 auto;padding:24px}
+input,textarea,select,button{font:inherit;border-radius:10px;border:1px solid #ffffff33;background:#ffffff10;color:#f8fafc;padding:10px 12px}
+input,textarea{width:100%}.row{display:flex;gap:10px;margin:8px 0}.row>*{flex:1}
 button{cursor:pointer;background:#7c3aed;border-color:#7c3aed;font-weight:600}
-button.ghost{background:#ffffff10;border-color:#ffffff33}
+.tabs{display:flex;gap:8px;margin:8px 0 16px}.tabs button{background:#ffffff10;border-color:#ffffff33}
+.tabs button.on{background:#7c3aed;border-color:#7c3aed}
 .card{background:#ffffff0e;border:1px solid #ffffff1f;border-radius:14px;padding:14px 16px;margin:12px 0}
 .card h3{margin:0 0 4px;color:#f8fafc;font-size:16px}
 .meta{font-size:12px;color:#c4b5fd99;margin-top:8px;display:flex;gap:10px;flex-wrap:wrap}
 .tier{text-transform:uppercase;letter-spacing:.5px;color:#67e8f9}
 .x{float:right;color:#fca5a5;cursor:pointer;font-size:13px}
+.chip{display:inline-block;background:#ffffff14;border:1px solid #ffffff22;border-radius:99px;padding:3px 10px;margin:3px;cursor:pointer;font-size:13px}
 </style></head><body>
 <header><h1>🌙 memento memory</h1><span class=badge id=stat>…</span></header>
 <main>
- <div class=card>
-  <input id=q placeholder="Search memories (BM25)…" oninput="load()">
+ <div class=tabs>
+  <button class=on id=tabM onclick="show('m')">Memories</button>
+  <button id=tabG onclick="show('g')">Knowledge graph</button>
  </div>
- <details class=card><summary style=cursor:pointer>+ Add a memory</summary>
-  <div class=row><input id=t placeholder="Title"></div>
-  <textarea id=c rows=3 placeholder="Content"></textarea>
-  <div class=row>
-   <select id=tier><option>episodic<option>working<option>semantic<option>procedural</select>
-   <input id=tags placeholder="tags (comma separated)">
-   <button onclick=save()>Save</button>
-  </div>
- </details>
- <div id=list></div>
+ <div id=viewM>
+  <div class=card><input id=q placeholder="Search (hybrid: BM25 + vector)…" oninput="load()"></div>
+  <details class=card><summary style=cursor:pointer>+ Add a memory</summary>
+   <div class=row><input id=t placeholder="Title"></div>
+   <textarea id=c rows=3 placeholder="Content"></textarea>
+   <div class=row>
+    <select id=tier><option>episodic<option>working<option>semantic<option>procedural</select>
+    <input id=tags placeholder="tags"><button onclick=save()>Save</button>
+   </div>
+  </details>
+  <div id=list></div>
+ </div>
+ <div id=viewG style=display:none><div class=card id=graph>…</div></div>
 </main>
 <script>
-async function load(){
- const q=document.getElementById('q').value;
- const r=await fetch('/api/memories?q='+encodeURIComponent(q));
- const d=await r.json();
- document.getElementById('list').innerHTML=d.memories.map(m=>`<div class=card>
-   <span class=x onclick="forget('${m.id}')">forget ✕</span>
-   <h3>${esc(m.title)}</h3><div>${esc(m.content)}</div>
-   <div class=meta><span class=tier>${m.tier}</span>${m.tags?'<span>#'+esc(m.tags)+'</span>':''}
-   ${m.session?'<span>'+esc(m.session)+'</span>':''}<span>${new Date(m.created_ts*1000).toLocaleString()}</span></div>
- </div>`).join('')||'<p style=opacity:.6>No memories yet.</p>';
- const s=await(await fetch('/api/stats')).json();
- document.getElementById('stat').textContent=s.total+' memories';
-}
 function esc(x){return (x||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
-async function save(){
- const b={title:t.value,content:c.value,tier:tier.value,tags:tags.value};
- await fetch('/api/memories',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(b)});
- t.value=c.value=tags.value='';load();
+function show(v){document.getElementById('viewM').style.display=v=='m'?'':'none';
+ document.getElementById('viewG').style.display=v=='g'?'':'none';
+ tabM.classList.toggle('on',v=='m');tabG.classList.toggle('on',v=='g');if(v=='g')graph()}
+async function load(){
+ const r=await fetch('/api/memories?q='+encodeURIComponent(q.value));const d=await r.json();
+ list.innerHTML=d.memories.map(m=>`<div class=card><span class=x onclick="forget('${m.id}')">forget ✕</span>
+  <h3>${esc(m.title)}</h3><div>${esc(m.content)}</div>
+  <div class=meta><span class=tier>${m.tier}</span><span>${esc(m.namespace)}</span>
+  ${m.tags?'<span>#'+esc(m.tags)+'</span>':''}<span>${new Date(m.created_ts*1000).toLocaleString()}</span></div></div>`).join('')||'<p style=opacity:.6>No memories.</p>';
+ const s=await(await fetch('/api/stats')).json();
+ stat.textContent=s.total+' memories · '+s.entities+' entities';
 }
+async function graph(){const g=await(await fetch('/api/graph')).json();
+ document.getElementById('graph').innerHTML='<h3>Top entities</h3>'+
+  (g.entities.map(e=>`<span class=chip onclick="q.value='${esc(e.name)}';show('m');load()">${esc(e.name)} ·${e.count}</span>`).join('')||'No entities yet.');}
+async function save(){await fetch('/api/memories',{method:'POST',headers:{'content-type':'application/json'},
+  body:JSON.stringify({title:t.value,content:c.value,tier:tier.value,tags:tags.value})});
+ t.value=c.value=tags.value='';load();}
 async function forget(id){await fetch('/api/forget',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id})});load();}
 load();
 </script></body></html>"""
 
 
-def _make_handler(store: MemoryStore):
+def _make_handler(store):
     class Handler(BaseHTTPRequestHandler):
-        def log_message(self, *a):  # silence default stderr logging
+        def log_message(self, *a):
             pass
 
         def _send(self, code, body, ctype="application/json"):
@@ -339,12 +607,14 @@ def _make_handler(store: MemoryStore):
                 return self._send(200, _PAGE, "text/html; charset=utf-8")
             if u.path == "/api/stats":
                 return self._send(200, json.dumps(store.stats()))
+            if u.path == "/api/graph":
+                return self._send(200, json.dumps(store.graph()))
             if u.path == "/api/memories":
                 qs = parse_qs(u.query)
                 q = (qs.get("q") or [""])[0]
                 tier = (qs.get("tier") or [None])[0]
-                rows = store.search(q, limit=200, tier=tier)
-                return self._send(200, json.dumps({"memories": rows}))
+                return self._send(200, json.dumps(
+                    {"memories": store.search(q, limit=200, tier=tier)}))
             return self._send(404, json.dumps({"error": "not found"}))
 
         def do_POST(self):
@@ -355,7 +625,8 @@ def _make_handler(store: MemoryStore):
                 try:
                     mid = store.save(body.get("title"), body.get("content"),
                                      tier=body.get("tier"), tags=body.get("tags"),
-                                     session=body.get("session", ""))
+                                     session=body.get("session", ""),
+                                     namespace=body.get("namespace") or DEFAULT_NAMESPACE)
                     return self._send(200, json.dumps({"id": mid}))
                 except ValueError as e:
                     return self._send(400, json.dumps({"error": str(e)}))
@@ -367,15 +638,14 @@ def _make_handler(store: MemoryStore):
     return Handler
 
 
-def make_server(store: MemoryStore, host="127.0.0.1", port=DEFAULT_PORT):
+def make_server(store, host="127.0.0.1", port=DEFAULT_PORT):
     return ThreadingHTTPServer((host, port), _make_handler(store))
 
 
 _DASHBOARD = {"thread": None, "url": None}
 
 
-def start_dashboard(store: MemoryStore, host="127.0.0.1", port=DEFAULT_PORT) -> str:
-    """Start the dashboard once in a daemon thread; return its URL."""
+def start_dashboard(store, host="127.0.0.1", port=DEFAULT_PORT) -> str:
     if _DASHBOARD["url"]:
         return _DASHBOARD["url"]
     srv = make_server(store, host, port)
@@ -387,7 +657,6 @@ def start_dashboard(store: MemoryStore, host="127.0.0.1", port=DEFAULT_PORT) -> 
 
 
 def serve_forever(host="127.0.0.1", port=DEFAULT_PORT):
-    """Blocking dashboard server — used by `mcp_server.py --web`."""
     store = MemoryStore()
     srv = make_server(store, host, port)
     print(f"[memento] memory dashboard → http://{host}:{srv.server_address[1]}")

@@ -210,7 +210,10 @@ class TestMcpProtocol(unittest.TestCase):
                                  "memento_adopt", "memento_harvest", "memento_auto",
                                  "memory_save", "memory_recall", "memory_list",
                                  "memory_forget", "memory_sessions", "memory_stats",
-                                 "memory_dashboard"})
+                                 "memory_dashboard", "memory_related", "memory_graph",
+                                 "memory_capture", "memory_consolidate", "memory_pin",
+                                 "memory_namespaces", "memory_snapshot",
+                                 "memory_restore", "memory_audit"})
         for t in tools:
             self.assertIn("inputSchema", t)
         # memory_save advertises its own schema, not the shared engine schema
@@ -409,6 +412,96 @@ class TestMemoryEngine(unittest.TestCase):
             self.assertEqual(self.store.stats()["total"], 1)
         finally:
             srv.server_close()
+
+
+class TestMemoryAdvanced(unittest.TestCase):
+    """Phases 2-5: vector/hybrid search, graph, lifecycle, governance."""
+
+    def setUp(self):
+        self._dir = tempfile.mkdtemp()
+        self.store = memento_memory.MemoryStore(
+            db_path=os.path.join(self._dir, "memory.db"),
+            export_path=os.path.join(self._dir, "standalone.json"))
+
+    # Phase 2
+    def test_vector_search_finds_lexically_similar(self):
+        self.store.save("Build", "run the test suite with rtk")
+        self.store.save("Docs", "write the changelog entry")
+        hits = self.store.search("execute tests rtk", mode="vector")
+        self.assertTrue(hits and hits[0]["title"] == "Build")
+
+    def test_hybrid_excludes_unrelated(self):
+        self.store.save("Build", "rtk mvn test orderservice")
+        self.store.save("Style", "prefer black formatting in python")
+        titles = [m["title"] for m in self.store.search("orderservice", mode="hybrid")]
+        self.assertIn("Build", titles)
+        self.assertNotIn("Style", titles)
+
+    # Phase 3
+    def test_knowledge_graph_links_shared_entities(self):
+        a = self.store.save("Fix", "patch OrderService.persist() bug")
+        self.store.save("Test", "add a test for OrderService coverage")
+        self.store.save("Other", "unrelated note about weather")
+        rel = self.store.related(a)
+        self.assertEqual([m["title"] for m in rel], ["Test"])
+        g = self.store.graph()
+        self.assertTrue(any(e["name"].lower().startswith("orderservice")
+                            for e in g["entities"]))
+
+    # Phase 4
+    def test_consolidation_promotes_and_forgets(self):
+        old = self.store.save("stale", "never accessed working note", tier="working")
+        hot = self.store.save("hot", "frequently used note", tier="working")
+        for _ in range(3):
+            self.store.search("frequently used")          # bump access_count
+        # make the stale one look old
+        with self.store._connect() as c:
+            c.execute("UPDATE memories SET created_ts=? WHERE id=?",
+                      (1.0, old))
+        r = self.store.consolidate()
+        self.assertEqual(r["forgotten"], 1)
+        self.assertGreaterEqual(r["promoted"], 1)
+        self.assertIsNone(self.store.get(old))
+        self.assertEqual(self.store.get(hot)["tier"], "episodic")
+
+    def test_pin_protects_from_consolidation(self):
+        mid = self.store.save("keep", "old working note", tier="working")
+        self.store.pin(mid)
+        with self.store._connect() as c:
+            c.execute("UPDATE memories SET created_ts=1.0 WHERE id=?", (mid,))
+        self.store.consolidate()
+        self.assertIsNotNone(self.store.get(mid))
+
+    def test_capture_hook_creates_working_memory(self):
+        self.store.capture("PreToolUse", "ran git status", session="s1")
+        rows = self.store.list(tier="working")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["source"], "hook")
+
+    # Phase 5
+    def test_namespaces_isolate(self):
+        self.store.save("a", "alpha", namespace="team-x")
+        self.store.save("b", "beta", namespace="team-y")
+        self.assertEqual(len(self.store.list(namespace="team-x")), 1)
+        self.assertEqual({n["namespace"] for n in self.store.namespaces()},
+                         {"team-x", "team-y"})
+
+    def test_snapshot_and_restore_roundtrip(self):
+        self.store.save("one", "first memory")
+        self.store.save("two", "second memory")
+        snap = os.path.join(self._dir, "snap.json")
+        self.assertEqual(self.store.snapshot(snap), 2)
+        fresh = memento_memory.MemoryStore(
+            db_path=os.path.join(self._dir, "fresh.db"),
+            export_path=os.path.join(self._dir, "fresh.json"))
+        self.assertEqual(fresh.restore(snap), 2)
+        self.assertEqual(fresh.stats()["total"], 2)
+        self.assertTrue(fresh.search("first"))
+
+    def test_audit_log_records_ops(self):
+        self.store.save("x", "audited save")
+        ops = {r["op"] for r in self.store.audit_log()}
+        self.assertIn("save", ops)
 
 
 class TestMemoryTools(unittest.TestCase):
