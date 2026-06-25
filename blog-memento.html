@@ -510,8 +510,8 @@
     </p>
 
     <ul class="checklist" style="margin: 16px 0 0;">
-      <li>MCP server exposing all 5 tools directly in your Devin chat</li>
-      <li>Devin ATIF-v1.7 transcript harvesting plus agentmemory and SKILL.md files</li>
+      <li>MCP server exposing the sleep-cycle + built-in memory tools directly in your Devin chat</li>
+      <li>Devin ATIF-v1.7 transcript harvesting plus built-in memory and SKILL.md files</li>
       <li>Devin CLI auto-registration via <code>devin mcp add</code></li>
       <li>Global skills directory so evolved skills propagate instantly across all projects</li>
       <li>Cross-platform path resolution for Linux and Windows</li>
@@ -571,7 +571,7 @@
       <div class="pipe-step">
         <span class="emoji">🌾</span>
         <div class="title">Harvest</div>
-        <div class="desc">Pulls sessions from agentmemory, skills, and logs</div>
+        <div class="desc">Pulls sessions from memory, skills, and transcripts</div>
       </div>
       <div class="pipe-step">
         <span class="emoji">🔍</span>
@@ -598,7 +598,7 @@
     <h3>Data Sources It Harvests</h3>
     <ul class="checklist">
       <li><strong>Devin transcripts</strong> — Native ATIF-v1.7 sessions from <code>~/.local/share/devin/cli/transcripts/*.json</code> with real user↔agent turns</li>
-      <li><strong>agentmemory</strong> — Memories saved by the MCP agentmemory server across all your sessions</li>
+      <li><strong>Built-in memory</strong> — Memories you save via memento's own memory tools (hybrid search, tiers, lessons) — no external server required</li>
       <li><strong>SKILL.md files</strong> — Your existing skill definitions from <code>.devin/skills/</code> used as training signal</li>
     </ul>
 
@@ -941,7 +941,7 @@
       <p style="margin:0; color: var(--muted); font-size:15px;">
         You used to correct the same things every session — "don't use field injection",
         "always add @Transactional on service methods", "use ResponseEntity not raw objects".
-        Sleep mines those corrections from your agentmemory and encodes them permanently
+        Sleep mines those corrections from your saved memories and encodes them permanently
         into the skill. You stop seeing the same mistake twice.
       </p>
     </div>
@@ -966,14 +966,21 @@
 
   <!-- ── THE 5 TOOLS ── -->
   <section>
-    <h2><span class="icon">🛠️</span> The 5 MCP Tools You Get</h2>
+    <h2><span class="icon">🛠️</span> The MCP Tools You Get</h2>
 
     <p>
-      Memento is integrated as an <strong>MCP server</strong> in Devin,
-      giving you these tools directly in your Devin chat:
+      Memento is integrated as an <strong>MCP server</strong> in Devin, giving you
+      <strong>24 tools</strong> directly in your Devin chat — the <strong>sleep-cycle</strong>
+      tools that evolve your skills, plus a full set of <strong>built-in memory</strong>
+      tools (see <a href="#" onclick="return false;">Built-in Memory</a> below).
     </p>
 
+    <h3 style="margin-top:8px;">Sleep cycle</h3>
     <div class="tool-list">
+      <div class="tool-item">
+        <span class="tool-name">memento_auto</span>
+        <div class="tool-desc"><strong>Fully automatic.</strong> Runs a cycle and auto-adopts the staged proposal when it clears the held-out validation gate, then shows you the SKILL.md diff. Schedulable for hands-off nightly improvement.</div>
+      </div>
       <div class="tool-item">
         <span class="tool-name">memento_status</span>
         <div class="tool-desc"><strong>Check progress.</strong> Shows how many nights have run and the latest staged proposal waiting for your review.</div>
@@ -993,6 +1000,30 @@
       <div class="tool-item">
         <span class="tool-name">memento_harvest</span>
         <div class="tool-desc"><strong>Debug / explore.</strong> Lists the recurring tasks mined from recent sessions so you can see exactly what the engine is learning from.</div>
+      </div>
+    </div>
+
+    <h3 style="margin-top:18px;">Built-in memory (no external server)</h3>
+    <div class="tool-list">
+      <div class="tool-item">
+        <span class="tool-name">memory_save / recall</span>
+        <div class="tool-desc"><strong>Remember & retrieve.</strong> Save memories (tiered, secret-redacted) and search them with <strong>hybrid BM25 + semantic vector</strong> retrieval. Saved memories feed the next sleep cycle automatically.</div>
+      </div>
+      <div class="tool-item">
+        <span class="tool-name">memory_learn / lessons</span>
+        <div class="tool-desc"><strong>Distill insights.</strong> Mine recurring entities, tags, and failures into semantic-tier <strong>lessons</strong> — or pin your own.</div>
+      </div>
+      <div class="tool-item">
+        <span class="tool-name">memory_graph / related</span>
+        <div class="tool-desc"><strong>Connect the dots.</strong> A knowledge graph of entities extracted from your memories, with neighbour lookup.</div>
+      </div>
+      <div class="tool-item">
+        <span class="tool-name">memory_dashboard</span>
+        <div class="tool-desc"><strong>See it all.</strong> Opens a local web dashboard — overview, memory browser, force-directed graph, lessons, sessions, activity.</div>
+      </div>
+      <div class="tool-item">
+        <span class="tool-name">+ more</span>
+        <div class="tool-desc">consolidate · pin · namespaces · snapshot / restore · audit · capture hooks — agentmemory-class coverage, all owned by memento and stdlib-only.</div>
       </div>
     </div>
   </section>
@@ -1226,7 +1257,7 @@
 
     <ul class="checklist" style="margin-top:16px;">
       <li>No weight training, no fine-tuning — pure text optimization of your SKILL.md files</li>
-      <li>Harvests from Devin transcripts, agentmemory, and skill files</li>
+      <li>Harvests from Devin transcripts, built-in memory, and skill files</li>
       <li>Validation gate ensures skills only improve, never regress</li>
       <li>You always review the proposal before it goes live</li>
       <li>Integrated as MCP server — available directly in Devin with auto-registration via CLI</li>
