@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Build the devin-memento MCP Bundle (.mcpb) for one-click install in
+# .mcpb-capable MCP clients. Output: dist/devin-memento.mcpb
+#
+# Requires Node/npx (uses @anthropic-ai/mcpb). The bundle ships the stdlib-only
+# server files and runs them with the user's python3.
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$HERE/.." && pwd)"
+STAGE="$(mktemp -d)"
+
+cp "$HERE/manifest.json" "$HERE/icon.png" "$STAGE"/
+cp "$ROOT"/mcp_server.py "$ROOT"/harvest_devin.py \
+   "$ROOT"/judge.py "$ROOT"/memento_memory.py "$STAGE"/
+
+npx -y @anthropic-ai/mcpb@latest validate "$STAGE/manifest.json"
+mkdir -p "$ROOT/dist"
+npx -y @anthropic-ai/mcpb@latest pack "$STAGE" "$ROOT/dist/devin-memento.mcpb"
+
+rm -rf "$STAGE"
+echo "→ $ROOT/dist/devin-memento.mcpb"

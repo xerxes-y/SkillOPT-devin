@@ -1,0 +1,153 @@
+{
+  "manifest_version": "0.2",
+  "name": "devin-memento",
+  "display_name": "memento",
+  "version": "0.5.0",
+  "description": "A nightly sleep cycle for Devin: self-improving SKILL.md + built-in memory (BM25+vector search, tiers, knowledge graph, lessons, dashboard).",
+  "long_description": "memento gives Devin a nightly self-evolution cycle (harvest -> mine -> replay -> validation gate -> adopt) plus a stdlib-only memory engine with hybrid search, a knowledge graph, auto-derived and manual lessons, and a local web dashboard. The sleep-cycle tools require a local clone of microsoft/SkillOpt at MEMENTO_ENGINE_REPO; the memory tools work without it.",
+  "author": {
+    "name": "xerxes-y",
+    "url": "https://github.com/xerxes-y/memento"
+  },
+  "homepage": "https://github.com/xerxes-y/memento",
+  "documentation": "https://github.com/xerxes-y/memento#readme",
+  "icon": "icon.png",
+  "server": {
+    "type": "python",
+    "entry_point": "mcp_server.py",
+    "mcp_config": {
+      "command": "python3",
+      "args": [
+        "${__dirname}/mcp_server.py"
+      ],
+      "env": {
+        "MEMENTO_ENGINE_REPO": "${user_config.engine_repo}",
+        "MEMENTO_HOME": "${user_config.home}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "memento_status",
+      "description": "Show how many Memento nights have run and the latest staged proposal."
+    },
+    {
+      "name": "memento_dry_run",
+      "description": "Preview a sleep cycle (harvest+mine+replay) without staging anything."
+    },
+    {
+      "name": "memento_run",
+      "description": "Run a full sleep cycle; stages a reviewed proposal."
+    },
+    {
+      "name": "memento_adopt",
+      "description": "Apply the latest staged proposal to the managed SKILL."
+    },
+    {
+      "name": "memento_harvest",
+      "description": "Debug: list the recurring tasks mined from recent Devin sessions."
+    },
+    {
+      "name": "memento_auto",
+      "description": "Fully automatic: run a sleep cycle and immediately adopt the staged proposal."
+    },
+    {
+      "name": "memory_save",
+      "description": "Persist a memory to memento's built-in store (SQLite)."
+    },
+    {
+      "name": "memory_recall",
+      "description": "Search memories by relevance."
+    },
+    {
+      "name": "memory_list",
+      "description": "List recent memories (optional tier / session filter)."
+    },
+    {
+      "name": "memory_forget",
+      "description": "Delete a memory by id, or all memories matching a query."
+    },
+    {
+      "name": "memory_sessions",
+      "description": "List sessions that have saved memories, with counts."
+    },
+    {
+      "name": "memory_stats",
+      "description": "Memory store stats: totals, per-tier counts, search backend."
+    },
+    {
+      "name": "memory_dashboard",
+      "description": "Start the local web dashboard to browse/search/add memories; returns its URL."
+    },
+    {
+      "name": "memory_related",
+      "description": "Knowledge-graph: memories sharing an entity with the given memory id."
+    },
+    {
+      "name": "memory_graph",
+      "description": "Knowledge-graph overview: top entities and link counts."
+    },
+    {
+      "name": "memory_capture",
+      "description": "Capture-hook: record an agent lifecycle event (SessionStart, PreToolUse, \u2026) as a working memory."
+    },
+    {
+      "name": "memory_consolidate",
+      "description": "Lifecycle: promote reinforced memories up a tier and auto-forget stale, never-accessed working memories."
+    },
+    {
+      "name": "memory_pin",
+      "description": "Pin (or unpin) a memory so decay/consolidation never removes it."
+    },
+    {
+      "name": "memory_namespaces",
+      "description": "Governance: list memory namespaces (scopes) with counts."
+    },
+    {
+      "name": "memory_snapshot",
+      "description": "Governance: write a git-versionable snapshot of all memories."
+    },
+    {
+      "name": "memory_restore",
+      "description": "Governance: restore memories from a snapshot file."
+    },
+    {
+      "name": "memory_audit",
+      "description": "Governance: recent audit-log entries (saves, forgets, consolidations)."
+    },
+    {
+      "name": "memory_learn",
+      "description": "Lessons: derive insights from recurring patterns (entities, tags, failures) into the semantic tier."
+    },
+    {
+      "name": "memory_lessons",
+      "description": "Lessons: list derived lessons (semantic insights from patterns)."
+    }
+  ],
+  "user_config": {
+    "engine_repo": {
+      "type": "directory",
+      "title": "SkillOpt engine path",
+      "description": "Local clone of microsoft/SkillOpt. Needed for the sleep-cycle tools; the memory tools work without it.",
+      "required": false,
+      "default": "${HOME}/.local/share/SkillOpt"
+    },
+    "home": {
+      "type": "directory",
+      "title": "Data directory",
+      "description": "Where memento stores runtime data, the memory DB, and learned skills.",
+      "required": false,
+      "default": "${HOME}/.memento"
+    }
+  },
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "linux",
+      "win32"
+    ],
+    "runtimes": {
+      "python": ">=3.10"
+    }
+  }
+}

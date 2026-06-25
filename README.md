@@ -124,6 +124,26 @@ python3 -m build && python3 -m twine upload dist/*
 > `uvx` env without being on PyPI. Point `MEMENTO_ENGINE_REPO` at a clone (or run
 > `install.sh` once to create one).
 
+### One-click install bundle (`.mcpb`)
+
+memento also ships as an **[MCP Bundle](https://github.com/modelcontextprotocol/mcpb)**
+(`.mcpb`) — a single file that `.mcpb`-capable MCP clients install with **one
+click** (the env vars become prompted config fields). Build it:
+
+```bash
+bash mcpb/build.sh        # → dist/devin-memento.mcpb  (needs Node/npx + python3)
+```
+
+The bundle ships the stdlib-only server and runs it with your `python3`; the
+**memory tools work immediately**, while the **sleep-cycle tools** still need a
+SkillOpt clone at `MEMENTO_ENGINE_REPO` (prompted at install).
+
+> **Where the button appears:** `.mcpb` one-click install is supported in
+> Claude-Desktop-class clients today. Devin's **cloud IDE** installs via its
+> curated Marketplace or the manual *Add a custom MCP* form (see below), so for
+> Devin the `.mcpb` is mainly the artifact to hand to Cognition for a listing.
+> The manifest source lives in [`mcpb/`](mcpb/).
+
 ### Enabling it for your whole organization (admins)
 
 memento is open-source and on PyPI, so **anyone can add it to their own Devin
@@ -331,7 +351,8 @@ memento/
 ├── seed_skill/
 │   └── SKILL.md               Initial skill seed (replaced by memento_adopt)
 ├── install.sh                 One-shot installer (Devin auto-detected)
-├── pyproject.toml             Packaging — `memento-mcp` console entrypoint (uvx/pip)
+├── pyproject.toml             Packaging — `devin-memento` console entrypoint (uvx/pip)
+├── mcpb/                       MCP Bundle source — manifest.json + icon + build.sh (.mcpb)
 └── README.md
 ```
 
