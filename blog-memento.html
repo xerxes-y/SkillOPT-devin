@@ -1233,7 +1233,11 @@
     </div>
     <p style="margin-top:12px;">
       Same tools and the same dashboard in both modes — switching from solo to a
-      shared team brain is a single environment variable.
+      shared team brain is a single environment variable (<code>MEMENTO_DB_URL</code>).
+      In team mode the dashboard gains a <strong>team selector</strong> that scopes
+      the memory browser, knowledge graph, and lessons to one namespace, and new
+      entries save into the selected team. Each member runs their own local
+      dashboard against the shared database — no server to host, no auth to manage.
     </p>
 
     <img src="assets/dashboard/overview.png" alt="Dashboard — overview" style="width:100%;border:1px solid var(--border);border-radius:var(--radius);margin:12px 0;" />

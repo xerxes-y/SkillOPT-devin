@@ -329,6 +329,12 @@ automatically once a dense embedder is
 configured; otherwise vector search uses the built-in lexical cosine (works on
 plain Postgres). Validate with `MEMENTO_TEST_PG_DSN=… python3 -m unittest discover -s tests`.
 
+**Dashboard in team mode:** the dashboard needs no changes — each member runs
+their **own local** `mcp_server.py --web` pointed at the shared DB (binds to
+`127.0.0.1`, so no auth needed) and uses the **team selector** to scope the view
+to their namespace. Only add authentication if you choose to host a *single
+shared* dashboard instance.
+
 ---
 
 ## Environment variables
