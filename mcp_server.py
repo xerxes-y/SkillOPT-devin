@@ -58,22 +58,20 @@ import sys
 
 # ── constants ─────────────────────────────────────────────────────────────────
 
-REPO_ROOT = (
+# expanduser wraps the whole value so a "~/..." env var is expanded too (not
+# just the default) — otherwise a literal ~ dir gets created.
+REPO_ROOT = os.path.expanduser(
     os.environ.get("MEMENTO_ENGINE_REPO")
     or os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 )
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
-CLAUDE_HOME = os.environ.get(
-    "MEMENTO_HOME",
-    os.path.expanduser("~/.memento"),
-)
+CLAUDE_HOME = os.path.expanduser(os.environ.get("MEMENTO_HOME", "~/.memento"))
 MANAGED_SKILL_NAME = os.environ.get("MEMENTO_MANAGED_SKILL", "memento-learned")
 # Memory engine lives in memento_memory (SQLite). This path is the
 # agentmemory-compatible JSON the engine mirrors to, so the harvester picks up
 # saved memories on the next sleep cycle with no extra wiring.
-MEMORY_PATH = os.environ.get(
-    "MEMENTO_MEMORY_PATH",
-    os.path.expanduser("~/.agentmemory/standalone.json"),
+MEMORY_PATH = os.path.expanduser(
+    os.environ.get("MEMENTO_MEMORY_PATH", "~/.agentmemory/standalone.json")
 )
 _MEM_TIERS = ("working", "episodic", "semantic", "procedural")
 PROTOCOL_VERSION = "2024-11-05"

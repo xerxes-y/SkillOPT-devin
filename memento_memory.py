@@ -54,10 +54,10 @@ WORKING_TTL_S = 86_400   # un-accessed working memories older than this are forg
 PROMOTE_ACCESS = 3       # access count that promotes a memory up a tier
 DECAY_HALFLIFE_S = 7 * 86_400
 
-DEFAULT_DB = os.environ.get(
-    "MEMENTO_MEMORY_DB", os.path.expanduser("~/.memento/memory.db"))
-DEFAULT_EXPORT = os.environ.get(
-    "MEMENTO_MEMORY_PATH", os.path.expanduser("~/.agentmemory/standalone.json"))
+DEFAULT_DB = os.path.expanduser(
+    os.environ.get("MEMENTO_MEMORY_DB", "~/.memento/memory.db"))
+DEFAULT_EXPORT = os.path.expanduser(
+    os.environ.get("MEMENTO_MEMORY_PATH", "~/.agentmemory/standalone.json"))
 DEFAULT_PORT = int(os.environ.get("MEMENTO_DASHBOARD_PORT", "3114"))
 
 # ── secret redaction (privacy filtering before storage) ───────────────────────
