@@ -123,12 +123,15 @@ _ENTITY_PATTERNS = [
 ]
 
 
+_ENTITY_STOP = {"redacted"}
+
+
 def extract_entities(text: str) -> list:
     found = {}
     for pat in _ENTITY_PATTERNS:
         for m in pat.findall(text or ""):
             name = m.strip().strip("`")
-            if 2 <= len(name) <= 60:
+            if 2 <= len(name) <= 60 and name.lower() not in _ENTITY_STOP:
                 found[name.lower()] = name
     return list(found.values())
 
