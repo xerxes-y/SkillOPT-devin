@@ -72,6 +72,8 @@ run mkdir -p "$DATA_DIR/projects"
 # ── 5. Seed skill into Devin workspaces ──────────────────────────────────────
 MANAGED_SKILL="${MEMENTO_MANAGED_SKILL:-memento-learned}"
 SEED="$SCRIPT_DIR/seed_skill/SKILL.md"
+HOOKS="$SCRIPT_DIR/seed_hooks/hooks.v1.json"
+RULES="$SCRIPT_DIR/devin-rules.snippet.md"
 
 _seed_skill_in_folder() {
   local folder="$1"
@@ -83,6 +85,18 @@ _seed_skill_in_folder() {
       run cp "$SEED" "$skill_dir/SKILL.md"
     else
       log "Skill already present: $skill_dir/SKILL.md (skipped)"
+    fi
+    # Recall-before-act rules (Layer 1) + automatic-injection hooks (Layer 2).
+    if [[ ! -f "$folder/.devin/rules/memento.md" ]]; then
+      log "Installing recall rules → $folder/.devin/rules/memento.md"
+      run mkdir -p "$folder/.devin/rules"
+      run cp "$RULES" "$folder/.devin/rules/memento.md"
+    fi
+    if [[ ! -f "$folder/.devin/hooks.v1.json" ]]; then
+      log "Installing recall hooks → $folder/.devin/hooks.v1.json"
+      run cp "$HOOKS" "$folder/.devin/hooks.v1.json"
+    else
+      log "Hooks already present: $folder/.devin/hooks.v1.json (skipped — merge devin-memento-hook manually)"
     fi
   fi
 }
@@ -190,7 +204,8 @@ echo "✓ Installation complete."
 echo ""
 echo "  Devin next steps:"
 echo "  1. MCP registration was handled automatically (if Devin CLI was found)"
-echo "  2. (Optional) copy devin-rules.snippet.md to .devin/rules/memento.md"
+echo "  2. Recall rules + hooks were seeded into detected .devin/ workspaces"
+echo "     (run '/hooks' in Devin to confirm devin-memento-hook is loaded)"
 echo "  3. Ask Devin: 'run the sleep cycle'"
 echo ""
 echo "  Default backend is 'mock' (free). For real optimization:"

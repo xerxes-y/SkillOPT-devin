@@ -1,0 +1,27 @@
+{
+  "//": "memento — automatic recall-before-act for Devin CLI. Copy to .devin/hooks.v1.json in your workspace (install.sh does this for you). Devin runs `devin-memento-hook` on each event; it injects the relevant team memories + standing lessons into Devin's context before it acts. Fails safe (never blocks). For team mode set MEMENTO_DB_URL / MEMENTO_NAMESPACE in Devin's environment.",
+  "UserPromptSubmit": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "devin-memento-hook",
+          "timeout": 10
+        }
+      ]
+    }
+  ],
+  "SessionStart": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "devin-memento-hook",
+          "timeout": 10
+        }
+      ]
+    }
+  ]
+}

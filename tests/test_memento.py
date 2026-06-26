@@ -630,6 +630,40 @@ class TestMemoryTools(unittest.TestCase):
     def test_brief_requires_task(self):
         self.assertIn("needs a 'task'", mcp_server._memory_brief({}))
 
+    def _run_hook(self, event):
+        """Feed a hook event JSON to run_hook_cli, return its stdout."""
+        import io
+        from unittest import mock
+        with mock.patch("sys.stdin", io.StringIO(json.dumps(event))):
+            buf = io.StringIO()
+            with mock.patch("sys.stdout", buf):
+                rc = mcp_server.run_hook_cli([])
+        return rc, buf.getvalue()
+
+    def test_hook_injects_context_on_user_prompt(self):
+        mcp_server._memory_save({"title": "Use Flyway", "content": "add a new V__ migration",
+                                 "tier": "procedural", "tags": "db"})
+        mcp_server._store().add_lesson("Gate releases", "ship behind a flag")
+        rc, out = self._run_hook({"hook_event_name": "UserPromptSubmit",
+                                  "prompt": "add a database migration"})
+        self.assertEqual(rc, 0)
+        payload = json.loads(out)
+        ctx = payload["hookSpecificOutput"]["additionalContext"]
+        self.assertEqual(payload["hookSpecificOutput"]["hookEventName"], "UserPromptSubmit")
+        self.assertIn("Use Flyway", ctx)       # relevant memory injected
+        self.assertIn("Gate releases", ctx)    # standing lesson injected
+
+    def test_hook_is_silent_on_garbage_and_unhandled_events(self):
+        import io
+        from unittest import mock
+        for bad in ("not json", json.dumps({"hook_event_name": "Stop"})):
+            with mock.patch("sys.stdin", io.StringIO(bad)):
+                buf = io.StringIO()
+                with mock.patch("sys.stdout", buf):
+                    rc = mcp_server.run_hook_cli([])
+            self.assertEqual(rc, 0)
+            self.assertEqual(buf.getvalue(), "")  # fail-safe: never blocks the agent
+
 
 class TestTeamAuthGate(unittest.TestCase):
     """MEMENTO_AUTH gate: the namespace is token-derived, not caller-asserted.

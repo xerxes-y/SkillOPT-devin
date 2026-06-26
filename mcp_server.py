@@ -839,7 +839,59 @@ def run_web_cli(argv) -> int:
     return 0
 
 
+def run_hook_cli(argv=None) -> int:
+    """Devin/Claude-Code hook entrypoint (`devin-memento-hook`).
+
+    Reads a hook event as JSON on stdin and, for context-injecting events,
+    prints ``hookSpecificOutput.additionalContext`` so the agent is handed the
+    relevant memories + lessons *before it acts* — automatic recall, no model
+    decision. Fails safe: on any error it emits nothing and exits 0, so a memory
+    problem can never block the agent.
+
+    - UserPromptSubmit → relevant memories for the prompt + standing lessons
+    - SessionStart     → standing lessons only
+    Namespace is taken from MEMENTO_NAMESPACE (team scope) when set, else all.
+    """
+    try:
+        raw = sys.stdin.read()
+        event = json.loads(raw) if raw.strip() else {}
+    except Exception:
+        return 0
+    name = event.get("hook_event_name") or event.get("hookEventName") or ""
+    if name not in ("UserPromptSubmit", "SessionStart"):
+        return 0
+    ns = os.environ.get("MEMENTO_NAMESPACE") or None
+    try:
+        store = _store()
+        lessons = store.lessons(limit=6, namespace=ns)
+        hits = []
+        if name == "UserPromptSubmit":
+            task = (event.get("prompt") or event.get("user_prompt") or "").strip()
+            if task:
+                hits = store.search(task, limit=5, namespace=ns)
+    except Exception:
+        return 0
+    if not hits and not lessons:
+        return 0
+    lines = ["# Team memory (memento) — recall before you act"]
+    if hits:
+        lines.append("\nRelevant prior memories:")
+        lines += [f"- ({m['tier']}) {m['title']}: {str(m['content']).strip()[:200]}"
+                  for m in hits]
+    if lessons:
+        lines.append("\nStanding lessons to apply:")
+        lines += [f"- {m['title']}: {str(m['content']).strip()[:200]}" for m in lessons]
+    lines.append("\nTreat these as constraints. If a lesson conflicts with the "
+                 "request, prefer the lesson and tell the user why.")
+    out = {"hookSpecificOutput": {"hookEventName": name,
+                                  "additionalContext": "\n".join(lines)}}
+    sys.stdout.write(json.dumps(out))
+    return 0
+
+
 def main() -> int:
+    if "--hook" in sys.argv[1:]:
+        return run_hook_cli(sys.argv[1:])
     if "--auto" in sys.argv[1:]:
         return run_auto_cli(sys.argv[1:])
     if "--web" in sys.argv[1:]:

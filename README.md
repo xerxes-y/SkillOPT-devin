@@ -60,8 +60,25 @@ bash install.sh
 
 ### Devin post-install
 
-MCP registration is automatic if the Devin CLI is installed.
-Optionally copy `devin-rules.snippet.md` to `.devin/rules/memento.md` in your workspace so Devin knows to offer the sleep tools.
+MCP registration is automatic if the Devin CLI is installed. `install.sh` also
+seeds each detected workspace's `.devin/` with the recall **rules**
+(`rules/memento.md`) and the recall **hooks** (`hooks.v1.json`) — see below.
+
+### Recall before you act (automatic)
+
+Memory is only useful if it's consulted *before* the agent acts. memento wires
+that two ways:
+
+- **Layer 1 — rules + `memory_brief`.** The `.devin/rules/memento.md` tells Devin
+  to call **`memory_brief`** (relevant memories **+** standing lessons for a task,
+  in one call) before starting work. Works on any MCP client.
+- **Layer 2 — automatic injection via Devin hooks.** `.devin/hooks.v1.json`
+  registers `devin-memento-hook` on **`UserPromptSubmit`** and **`SessionStart`**
+  (Devin's [Claude-Code-compatible hooks](https://docs.devin.ai/cli/extensibility/hooks/overview)).
+  Devin then injects the relevant memories/lessons into context **automatically,
+  before it acts** — the model can't skip recall. The hook **fails safe**: any
+  error emits no context and exits 0, so it never blocks Devin. For team mode,
+  set `MEMENTO_DB_URL` / `MEMENTO_NAMESPACE` in Devin's environment.
 
 ### Windows
 
