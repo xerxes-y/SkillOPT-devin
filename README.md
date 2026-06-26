@@ -335,6 +335,41 @@ their **own local** `mcp_server.py --web` pointed at the shared DB (binds to
 to their namespace. Only add authentication if you choose to host a *single
 shared* dashboard instance.
 
+### Team gate with Keycloak / OIDC (optional)
+
+Out of the box the `namespace` (= team) is **self-asserted** — any caller can
+pass any team name. To make it **identity-bound**, turn on the Keycloak gate:
+the team is then read from a **verified access token** (the user's Keycloak
+`groups`), so a member can only read/write the team(s) they belong to.
+
+```bash
+pip install 'devin-memento[team-auth]'      # adds pyjwt[crypto]
+
+export MEMENTO_AUTH=keycloak
+export MEMENTO_OIDC_ISSUER=https://kc.example.com/realms/<realm>
+export MEMENTO_OIDC_CLIENT_ID=memento        # device-flow enabled on the client
+# export MEMENTO_OIDC_TEAMS_CLAIM=groups     # default; the claim that lists teams
+
+python memento_auth.py login                 # one-time, OAuth2 device flow
+python memento_auth.py whoami                # shows identity + teams
+```
+
+Once on, `memory_save` / `memory_recall` / `memory_list` / `memory_forget`
+ignore a forged `namespace` and use the token's team instead: requesting a team
+you're not in is denied, a read with no team is forced to your team (not
+all teams), and saves are stamped with your token identity (`actor`). Keycloak
+**group membership = team membership** — add a member to a group, they get that
+team's memory.
+
+This is **Option A** — the check runs in each member's local MCP server, so it
+stops *accidental* cross-team access and gives correct attribution, but a member
+who holds the Postgres credentials can still bypass it. For **hard isolation**
+(a member genuinely *cannot* reach another team), put the DB behind a small
+gateway that performs this same token→namespace check server-side and run
+Postgres **row-level security** (`namespace = current_setting('app.current_team')`)
+— clients then never hold DB credentials. The token logic in `memento_auth.py`
+is the reusable piece for that gateway.
+
 ---
 
 ## Environment variables
@@ -346,6 +381,10 @@ shared* dashboard instance.
 | `MEMENTO_WORKSPACES` | auto-detected | Colon-separated workspace paths |
 | `MEMENTO_MANAGED_SKILL` | `memento-learned` | Skill name to evolve |
 | `MEMENTO_DB_URL` | unset | Postgres DSN → **shared team memory** (else local SQLite) |
+| `MEMENTO_AUTH` | unset | `keycloak` → derive the team `namespace` from a verified OIDC token (else self-asserted) |
+| `MEMENTO_OIDC_ISSUER` | unset | Keycloak realm issuer URL (required when `MEMENTO_AUTH` is on) |
+| `MEMENTO_OIDC_CLIENT_ID` | `memento` | OIDC client id (device flow enabled) |
+| `MEMENTO_OIDC_TEAMS_CLAIM` | `groups` | Token claim listing the user's teams |
 | `MEMENTO_MEMORY_DB` | `~/.memento/memory.db` | SQLite memory store (when no `MEMENTO_DB_URL`) |
 | `MEMENTO_MEMORY_PATH` | `~/.agentmemory/standalone.json` | agentmemory-compatible export the harvester reads |
 | `MEMENTO_DASHBOARD_PORT` | `3114` | Local memory dashboard port |
@@ -386,6 +425,7 @@ memento/
 ├── harvest_devin.py           Transcript generator (Devin ATIF-v1.7 + agentmemory + skills)
 ├── memento_memory.py          Built-in memory engine (SQLite + BM25 + tiers + web dashboard)
 ├── memento_memory_pg.py       Shared per-team backend (PostgreSQL + pgvector)
+├── memento_auth.py            Keycloak/OIDC team gate — token→namespace (optional)
 ├── team/                       docker-compose for a per-team Postgres
 ├── judge.py                   Reference judge — scores a reply against a rubric (validation gate)
 ├── fixtures/

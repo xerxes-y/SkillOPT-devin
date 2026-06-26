@@ -594,6 +594,57 @@ class TestMemoryTools(unittest.TestCase):
         self.assertIn("1 total", mcp_server._memory_stats({}))
 
 
+class TestTeamAuthGate(unittest.TestCase):
+    """MEMENTO_AUTH gate: the namespace is token-derived, not caller-asserted.
+
+    Keycloak itself is not needed — we patch memento_auth's token accessors so
+    the test exercises the mcp_server handlers' enforcement, not the OAuth flow.
+    """
+
+    def setUp(self):
+        import memento_auth
+        self.auth = memento_auth
+        self._orig_store = mcp_server._MEMORY_STORE
+        self._dir = tempfile.mkdtemp()
+        mcp_server._MEMORY_STORE = memento_memory.MemoryStore(
+            db_path=os.path.join(self._dir, "memory.db"),
+            export_path=os.path.join(self._dir, "standalone.json"))
+        # seed one memory in each of two teams (trust-based path)
+        mcp_server._memory_save({"title": "A", "content": "alpha secret",
+                                 "namespace": "team-alpha"})
+        mcp_server._memory_save({"title": "B", "content": "beta secret",
+                                 "namespace": "team-beta"})
+        self._patches = [
+            mock.patch.object(self.auth, "enabled", lambda: True),
+            mock.patch.object(self.auth, "teams", lambda: ["team-alpha"]),
+            mock.patch.object(self.auth, "actor", lambda: "alice"),
+        ]
+        for p in self._patches:
+            p.start()
+
+    def tearDown(self):
+        for p in self._patches:
+            p.stop()
+        mcp_server._MEMORY_STORE = self._orig_store
+
+    def test_recall_is_forced_to_my_team(self):
+        out = mcp_server._memory_recall({"query": "secret"})
+        self.assertIn("alpha secret", out)
+        self.assertNotIn("beta secret", out)  # other team is invisible
+
+    def test_cross_team_request_is_denied(self):
+        for fn in (mcp_server._memory_recall, mcp_server._memory_save,
+                   mcp_server._memory_forget):
+            out = fn({"query": "x", "title": "x", "content": "x",
+                      "id": "x", "namespace": "team-beta"})
+            self.assertIn("Not authorized for team 'team-beta'", out)
+
+    def test_save_lands_in_my_team(self):
+        out = mcp_server._memory_save({"title": "C", "content": "more alpha"})
+        self.assertIn("saved", out)
+        self.assertIn("more alpha", mcp_server._memory_recall({"query": "more"}))
+
+
 _PG_DSN = os.environ.get("MEMENTO_TEST_PG_DSN")
 
 

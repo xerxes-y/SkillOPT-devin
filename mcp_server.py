@@ -507,6 +507,26 @@ def _store():
     return _MEMORY_STORE
 
 
+def _ns(args: dict):
+    """Resolve the namespace (= team) for a memory call.
+
+    Trust-based by default: whatever the caller passed (``None`` = all teams).
+    When MEMENTO_AUTH is on, the team is derived from the verified Keycloak
+    token instead — the caller can only reach a team they belong to. Raises
+    memento_auth.AuthError, which the memory handlers turn into a [memory]
+    message rather than a traceback."""
+    import memento_auth
+    if not memento_auth.enabled():
+        return args.get("namespace")
+    return memento_auth.resolve_namespace(args.get("namespace"))
+
+
+def _actor() -> str:
+    """Token identity for attribution, or '' in trust-based mode."""
+    import memento_auth
+    return memento_auth.actor() if memento_auth.enabled() else ""
+
+
 def _fmt(rows: list) -> str:
     if not rows:
         return "[memory] no memories found."
@@ -517,29 +537,48 @@ def _fmt(rows: list) -> str:
 
 
 def _memory_save(args: dict) -> str:
+    import memento_auth
     try:
+        ns = _ns(args) or "default"
         mid = _store().save(args.get("title"), args.get("content"),
                             tier=args.get("tier"), tags=args.get("tags"),
                             session=args.get("session", ""),
-                            namespace=args.get("namespace") or "default")
+                            namespace=ns, actor=_actor())
+    except memento_auth.AuthError as exc:
+        return f"[memory] {exc}"
     except ValueError as exc:
         return f"[memory] error: {exc}"
     return f"[memory] saved ({mid}) in tier '{args.get('tier') or 'episodic'}': {args.get('title')}"
 
 
 def _memory_recall(args: dict) -> str:
+    import memento_auth
+    try:
+        ns = _ns(args)
+    except memento_auth.AuthError as exc:
+        return f"[memory] {exc}"
     return _fmt(_store().search(args.get("query"), limit=args.get("limit") or 10,
-                                tier=args.get("tier"), namespace=args.get("namespace"),
+                                tier=args.get("tier"), namespace=ns,
                                 mode=args.get("mode") or "hybrid"))
 
 
 def _memory_list(args: dict) -> str:
+    import memento_auth
+    try:
+        ns = _ns(args)
+    except memento_auth.AuthError as exc:
+        return f"[memory] {exc}"
     return _fmt(_store().list(limit=args.get("limit") or 20, tier=args.get("tier"),
-                              session=args.get("session")))
+                              session=args.get("session"), namespace=ns))
 
 
 def _memory_forget(args: dict) -> str:
-    n = _store().forget(mem_id=args.get("id"), query=args.get("query"))
+    import memento_auth
+    try:
+        ns = _ns(args)
+    except memento_auth.AuthError as exc:
+        return f"[memory] {exc}"
+    n = _store().forget(mem_id=args.get("id"), query=args.get("query"), namespace=ns)
     return f"[memory] forgot {n} memory(ies)."
 
 

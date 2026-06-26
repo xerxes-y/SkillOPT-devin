@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "devin-memento"
-version = "0.6.0"
+version = "0.7.0"
 description = "Memento — a Devin MCP server that gives Devin a nightly sleep cycle to self-improve its SKILL.md."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -26,6 +26,9 @@ dependencies = []
 [project.optional-dependencies]
 # Shared per-team memory backend (PostgreSQL + pgvector).
 postgres = ["psycopg[binary]>=3.1"]
+# Keycloak/OIDC team gate: derive the memory namespace from a verified token
+# instead of trusting the caller (MEMENTO_AUTH=keycloak). See memento_auth.py.
+team-auth = ["pyjwt[crypto]>=2.8"]
 
 [project.scripts]
 devin-memento = "mcp_server:main"
@@ -36,6 +39,11 @@ Homepage = "https://github.com/xerxes-y/memento"
 Repository = "https://github.com/xerxes-y/memento"
 
 [tool.setuptools]
-# Flat layout: ship the three top-level modules. The MCP server shells out to
-# harvest_devin.py as a sibling file, so all three must land together.
-py-modules = ["mcp_server", "harvest_devin", "judge", "memento_memory"]
+# Flat layout: ship the top-level modules. The MCP server shells out to
+# harvest_devin.py as a sibling file, so they must all land together.
+# memento_memory_pg + memento_auth are loaded lazily only when their optional
+# extras (postgres / team-auth) are in use.
+py-modules = [
+  "mcp_server", "harvest_devin", "judge",
+  "memento_memory", "memento_memory_pg", "memento_auth",
+]

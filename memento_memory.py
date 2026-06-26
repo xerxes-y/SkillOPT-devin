@@ -251,13 +251,16 @@ class MemoryStore:
             self._audit(c, "pin" if pinned else "unpin", mem_id)
             return cur.rowcount > 0
 
-    def forget(self, mem_id=None, query=None) -> int:
+    def forget(self, mem_id=None, query=None, namespace=None) -> int:
         with self._connect() as c:
             if mem_id:
-                ids = [r["id"] for r in c.execute(
-                    "SELECT id FROM memories WHERE id=?", (mem_id,))]
+                sql = "SELECT id FROM memories WHERE id=?"
+                params = [mem_id]
+                if namespace:  # team gate: can't delete another team's memory by id
+                    sql += " AND namespace=?"; params.append(namespace)
+                ids = [r["id"] for r in c.execute(sql, params)]
             elif query:
-                ids = [m["id"] for m in self.search(query, limit=1000)]
+                ids = [m["id"] for m in self.search(query, limit=1000, namespace=namespace)]
             else:
                 return 0
             for i in ids:
