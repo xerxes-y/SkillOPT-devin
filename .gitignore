@@ -9,3 +9,4 @@ build/
 .venv/
 venv/
 .idea/
+tests/hook_test.log
